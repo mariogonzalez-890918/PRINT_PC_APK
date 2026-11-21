@@ -1,0 +1,2 @@
+3a4fa274ebbb2d73b3ea4bb98442f75667840fd31a0c1904168a708ad17c2c4d  JADPrint-Android-0.1.0.apk
+11f441733e73176cf8f62a3d858095d0b7e12c800bb96faea760302eb40cf02b  JADPrint-Instalador-0.1.0.exe

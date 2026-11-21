@@ -1,0 +1,24 @@
+JAD Print 0.1.0 - third-party components
+
+Python 3.13.9 (embedded Windows runtime)
+Copyright Python Software Foundation and contributors.
+License and notices: runtime/LICENSE.txt
+https://www.python.org/downloads/release/python-3139/
+Source: https://www.python.org/ftp/python/3.13.9/Python-3.13.9.tar.xz
+
+Pillow 12.0.0
+Copyright the Pillow contributors.
+License and bundled-library notices: runtime/Lib/site-packages/pillow-12.0.0.dist-info/licenses/
+https://pillow.readthedocs.io/en/stable/about.html
+Source: https://github.com/python-pillow/Pillow/tree/12.0.0
+
+SumatraPDF 3.6.1, unmodified, used as a separate executable.
+Copyright Krzysztof Kowalczyk and contributors.
+GNU GPL version 3; includes components with their respective licenses.
+License: engine/COPYING
+Corresponding release source: https://github.com/sumatrapdfreader/sumatrapdf/tree/3.6.1rel
+Source archive: https://github.com/sumatrapdfreader/sumatrapdf/archive/refs/tags/3.6.1rel.zip
+https://www.sumatrapdfreader.org/
+
+Android SDK build tools and JDK are used for building only and are not included
+in either the Android APK or the Windows installer.
