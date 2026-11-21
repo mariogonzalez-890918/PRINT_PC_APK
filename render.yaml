@@ -1,0 +1,23 @@
+# Optional public Python server. Applying this template can incur hosting charges.
+# Clients install only the Windows EXE or Android APK; no Docker is required.
+services:
+  - type: web
+    name: printer-tab-central
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements-server.txt
+    startCommand: python pc/central_server.py
+    healthCheckPath: /api/health
+    disk:
+      name: printer-tab-data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.9
+      - key: PRINTER_TAB_DATA
+        value: /var/data/printer-tab
+      - key: PRINTER_TAB_ADMIN_EMAIL
+        sync: false
+      - key: PRINTER_TAB_ADMIN_PASSWORD
+        sync: false

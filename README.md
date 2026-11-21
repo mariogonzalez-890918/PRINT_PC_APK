@@ -1,108 +1,84 @@
-# PRINTER-TAB · versión inicial 0.2.1
+# PRINTER-TAB 0.3.0
 
-Sistema de impresión para Windows y tablets Android: una cuenta administradora identificada por correo, varias PCs con impresoras instaladas y permisos por tablet. Proyecto independiente alojado en https://github.com/mariogonzalez-890918/PRINT_PC_APK.
+Aplicaciones gestionadas, desarrolladas y administradas por **Área de TI GMP · [sistemas@grupomipan.com](mailto:sistemas@grupomipan.com)**.
 
-## Archivos para instalar
+Servidor central de administración, agentes Windows y APK Android. El correo identifica la cuenta; cada PC, tablet o celular se une mediante un **código de registro completo PT3...**, de un solo uso y con vigencia de 15 minutos. Los clientes no necesitan escribir la IP.
 
-- `dist/PRINTER-TAB-Instalador-0.2.1.exe`: instalador Windows x64 por usuario; incluye Python y el motor PDF, no necesitas instalar Python.
-- `dist/PRINTER-TAB-Android-0.2.0.apk`: APK firmada para Android 8 o posterior; instalación directa, fuera de Play Store.
+## Descargar e instalar
 
-El instalador Windows aún no tiene certificado de firma de editor. La firma Android permite instalar y actualizar con la misma clave local; no representa publicación o certificación de Google Play.
+Los archivos están en [Releases](https://github.com/mariogonzalez-890918/PRINT_PC_APK/releases):
 
-## Cómo funciona
+- **PRINTER-TAB-Instalador-0.3.0.exe**: Windows x64. Incluye Python, las librerías, panel gráfico, icono y motor de impresión. No requiere instalar Python o Docker por separado. Se instala en las PCs cliente y, si se utiliza una PC Windows como servidor, en ella también.
+- **PRINTER-TAB-Android-0.3.0.apk**: Android 8 o posterior para tablets y celulares. Se instala encima de la APK anterior con la misma firma y el paquete `com.jad.print` para conservar la vinculación.
 
-Una PC aloja el **servidor y consola administrador**. Cada PC con impresoras ejecuta un **agente de impresión**, incluida la PC del servidor si también tiene impresoras. Desde el panel gráfico de esa PC puedes iniciar servidor e impresión juntos.
+El instalador Windows todavía no tiene certificado de firma de editor. La APK está firmada para instalación directa, fuera de Play Store. La versión es inicial y requiere validar la impresión física en los modelos concretos de impresora.
 
-La tablet elige PC1 o PC2 y una impresora compartida. El servidor guarda el trabajo y el agente de esa PC lo recoge y entrega al controlador de Windows. Las PCs consultan al servidor; no requieren que las tablets se conecten directamente a sus impresoras ni puertos entrantes en cada agente.
+## Servidor, red y datos móviles
 
-El correo identifica **una cuenta local**, sin correo de verificación, recuperación por email o servicio en la nube. La dirección del servidor debe configurarse al vincular cada dispositivo. La versión inicial administra una cuenta por servidor. No es una copia de PrintHand ni utiliza su código.
+El servidor conserva la cuenta, registro de equipos, permisos, cola de documentos e inventarios. Las impresoras permanecen conectadas a sus PCs. El EXE de cada PC consulta al servidor y entrega los trabajos al controlador de Windows mediante conexiones salientes.
 
-## Puesta en marcha
+Funciona con una dirección del servidor que sea accesible desde los equipos:
 
-1. Instala el EXE en cada PC Windows x64. Instala primero los controladores Epson, Bixolon u otros del fabricante y comprueba una impresión desde Windows.
-2. Abre el acceso directo **PRINTER-TAB**: aparece un panel gráfico con icono, sin CMD. En la PC servidor pulsa **Crear cuenta / servidor** e introduce correo, contraseña de 4 a 200 caracteres y confirmación. No hay credenciales predeterminadas.
-3. Pulsa **Abrir administración** en el panel para entrar a `http://localhost:8765` con esa cuenta. El panel puede minimizarse a la bandeja de Windows; cerrarlo con la X lo deja en la bandeja. **Salir** detiene los componentes iniciados desde ese panel.
-4. Reserva una IP para esa PC en el router. Los demás dispositivos usarán, por ejemplo, `http://192.168.0.10:8765`. `localhost` solo funciona en la propia PC servidor.
-5. Permite TCP 8765 entrante hacia esa PC en la red privada. Si tienes permiso para administrar Windows, puedes ejecutar en PowerShell elevado, sustituyendo el CIDR por **las subredes reales autorizadas**:
+- **Red local:** IP del servidor y TCP 8765 permitido entre las redes Wi-Fi/cableadas.
+- **ZeroTier, Radmin u otra VPN:** IP de la red virtual y rutas/firewall que permitan TCP 8765. La VPN debe incluir al dispositivo y permitir comunicación con la PC servidor.
+- **Datos móviles sin VPN:** servidor público por HTTPS. No hace falta comprar un dominio propio; un alojamiento puede entregar su propia dirección HTTPS. Un servidor que solo tenga IP privada necesita publicación, enrutamiento o un servicio intermedio para ser accesible desde Internet.
 
-   ```powershell
-   New-NetFirewallRule -DisplayName 'PRINTER-TAB - red autorizada' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8765 -Profile Private -RemoteAddress '192.168.0.0/24','192.168.1.0/24'
-   ```
+El código de registro incluye la dirección de conexión configurada por el administrador. No es una redirección por correo ni atraviesa por sí solo NAT, firewalls o redes aisladas. El alojamiento público no viene contratado ni activado en esta entrega.
 
-   Este proyecto no ha modificado tu firewall ni tu router. No abras el puerto al Internet público. Para otra sede usa una VPN o un despliegue HTTPS administrado.
-6. En el panel de cada PC pulsa **Compartir impresoras**, inicia sesión con la cuenta administradora del servidor y publica las impresoras detectadas de Windows. En la PC servidor se vincula el agente automáticamente, sin generar un código para sí misma. La impresión se inicia al publicar. Para vincular por código sigue disponible **Vincular por código**.
-7. Instala la APK en cada tablet habilitando la instalación desde la fuente que utilices. En la consola genera **Vincular tablet**. En la APK introduce dirección, correo, nombre y código.
-8. En el panel Windows pulsa **Asignar impresoras a tablets**. Inicia sesión, selecciona una tablet en la lista, marca sus impresoras permitidas y pulsa **Guardar asignación**. Repite para cada tablet. Se admiten impresoras de varias PCs por tablet. El botón **Vincular tablet** genera un código; después de vincularla pulsa **Actualizar equipos**. También puedes asignar desde la consola web. Por defecto una tablet nueva no tiene permisos.
-9. En la APK actualiza impresoras, elige PC e impresora, archivo y opciones. Confirma **Imprimir**. También puedes usar **Compartir → PRINTER-TAB** desde una aplicación que comparta un PDF, JPG o PNG.
-10. Consulta el historial en la APK o la consola. El botón **Actualizar** renueva el estado. Los botones **Detener servidor** y **Detener impresión** detienen cada componente; la X minimiza a la bandeja. El instalador ofrece iniciar el agente al entrar a Windows como opción, desactivada de inicio.
+## Preparar la cuenta y registrar los equipos
 
-## Cambios 0.2.1: asignación desde el EXE
+1. En la PC que será servidor abre el acceso directo **PRINTER-TAB**, pulsa **Crear servidor (TI)** y crea la cuenta por correo. Contraseña de 4 a 200 caracteres. No hay credenciales predeterminadas.
+2. Mantén el panel abierto e inicia el servidor. La X minimiza a la bandeja; **Salir** detiene los componentes iniciados desde ese panel.
+3. Pulsa **Abrir administración** e inicia sesión. En **Servicio central y registro** configura una vez la dirección accesible del servicio, si se usará una dirección pública o una IP VPN específica. Vacío utiliza las direcciones locales detectadas. No escribas `localhost` como dirección destinada a otros equipos.
+4. Genera un código con **Registrar PC** o **Registrar móvil** y copia el código PT3 completo. Cada equipo necesita un código distinto.
+5. En una PC cliente pulsa **Unir con código**, introduce el correo, el código completo y su nombre. En Android introduce correo, nombre y código completo. No se solicita la IP en estos formularios.
+6. En cada PC con impresoras instala antes su controlador de Windows y pulsa **Compartir impresoras**. Inicia su agente de impresión. El servidor, si también tiene impresoras, debe registrarse como una PC con su propio código de PC.
+7. En la consola, dentro de cada PC, decide cuáles impresoras quedan habilitadas para compartir. Después, en **Asignar impresoras a PCs y móviles**, marca las que puede utilizar cada equipo y guarda. Los permisos se comprueban en el servidor.
+8. La APK permite elegir PC e impresora y enviar un PDF, PNG o JPEG; también aparece como destino de Compartir. El EXE tiene **Imprimir archivo** para enviar documentos a impresoras de otra PC. Cada equipo ve únicamente sus impresoras autorizadas.
 
-El panel incluye **Compartir impresoras** y **Asignar impresoras a tablets**. Iniciar el servidor por sí solo no publica las impresoras: usa Compartir impresoras en cada PC. La selección por tablet se guarda en el servidor y se respeta al imprimir. En la APK pulsa **Actualizar impresoras** después de cambiar permisos.
+No es necesario dar la contraseña administradora a cada cliente: se unen con correo y código. Un cliente nuevo comienza sin permisos de impresión. Desactivar una PC, dispositivo o la compartición de una impresora impide nuevos trabajos autorizados por esa condición. Los trabajos ya entregados al controlador requieren revisar la cola Windows.
 
-El instalador Windows se actualiza a 0.2.1; la APK sigue en 0.2.0 y no es necesario reinstalarla para esta corrección.
+## Auditoría de PCs, tablets y celulares
 
-## Actualizar desde 0.1.0 o 0.2.0
+En **Inventario / Excel** del EXE o en **Auditoría de equipos** de la consola:
 
-Cierra la versión anterior y ejecuta el nuevo EXE. Se conserva el identificador del instalador y la carpeta de datos `%LOCALAPPDATA%\JADPrint`; no se cambian automáticamente la cuenta, las contraseñas ni las vinculaciones. Los accesos directos nuevos se llaman PRINTER-TAB. El nuevo EXE es una aplicación gráfica de Windows con icono incorporado, panel y bandeja.
+- **Solicitar auditoría** envía una solicitud al equipo registrado. Una PC la atiende con su agente activo; un móvil la atiende cuando la APK está abierta, conectada y desocupada.
+- Windows consulta mediante instrucciones fijas y de solo lectura: fabricante/modelo, sistema, CPU, RAM, discos, placa base y gráficos. Los datos no disponibles se registran como errores de consulta.
+- Android reporta fabricante/modelo, sistema, CPU/ABI, procesadores, RAM, almacenamiento interno y pantalla. Las restricciones de Android limitan el acceso a números de serie y otros detalles de hardware. No se piden permisos adicionales para acceder a esos identificadores.
+- La APK incluye **Enviar inventario del equipo** para generar un reporte manual.
+- **Descargar Excel** exporta las hojas Equipos y Componentes, con fecha de recepción y estado de solicitud. Las celdas recibidas de los equipos se guardan como texto cuando corresponde para evitar ejecución de fórmulas.
 
-En Android instala la APK 0.2.0 encima de la anterior. Mantiene el paquete `com.jad.print`, la firma original y los datos de vinculación; ahora se muestra como PRINTER-TAB. No desinstales primero la APK si quieres conservar sus datos.
+Los inventarios solo son consultables/exportables por el administrador de esa cuenta. Son datos reportados por los agentes, no una certificación independiente del hardware. No se implementó escritorio remoto ni ejecución arbitraria de comandos desde el servidor.
 
-## Cambiar logo, icono y contraseña
+## Impresión y confirmaciones
 
-En el panel pulsa **Logo / icono / contraseña**, inicia sesión como administrador y abre **Personalización**.
+PDF, PNG y JPEG, hasta 25 MB. Imágenes hasta 25 megapíxeles; 1 a 20 copias. En Android: ajustar al papel o tamaño real, papel del controlador/A4/Carta y color/monocromo. El envío inicial desde PC usa ajuste al papel y el papel del controlador.
 
-- **Logo:** PNG, JPG o WebP de hasta 2 MB. Se guarda en el servidor y aparece en la consola y los paneles vinculados.
-- **Icono Windows:** ICO, PNG, JPG o WebP de hasta 2 MB. Se convierte a un ICO con varios tamaños y se aplica a la ventana, bandeja y accesos directos PRINTER-TAB existentes al volver al panel. Los agentes vinculados reciben la personalización del servidor. El icono incorporado al instalador/EXE en el Explorador y el icono de Android siguen siendo los de la compilación.
-- Ambos tienen un botón para restaurar el original. En **Cambiar contraseña** introduce la actual, la nueva de 4 a 200 caracteres y su confirmación.
+Para tickets o etiquetas configura el rollo/tamaño en el controlador de Windows y genera un PDF de las medidas correctas. No incluye corte de papel, cajón de dinero, ESC/POS directo ni formatos propietarios. Word/Excel deben exportarse a PDF.
 
-**Aplicaciones gestionadas, desarrolladas y administradas por Área de TI GMP · [sistemas@grupomipan.com](mailto:sistemas@grupomipan.com)**
+**Enviado a Windows** confirma entrega al controlador, no salida física de papel. **Sin confirmar** o **Resultado incierto** exige revisar la cola antes de volver a imprimir. Los reintentos de la APK y del EXE conservan el identificador y el archivo pendiente para no crear otro trabajo si se perdió la respuesta del servidor. No garantiza entrega física exactamente una vez ante fallos del controlador o del hardware.
 
-## Cable y Wi-Fi en segmentos distintos
+## Personalización y actualizaciones
 
-Por ejemplo, servidor en `192.168.0.10` y tablet en `192.168.1.50` pueden trabajar juntos si el router enruta entre esas redes y permite alcanzar `192.168.0.10:8765`. Una red Wi-Fi de invitados con aislamiento suele impedirlo. Compartir un correo no elimina el aislamiento de red.
+Desde **Logo / icono / contraseña** puedes cambiar/restaurar logo e icono de Windows y cambiar contraseña. PNG/JPG/WebP hasta 2 MB; el icono también admite ICO. El icono personalizado se aplica al panel, bandeja y accesos directos existentes; el del instalador/EXE en Explorador y el de Android son los incorporados en la compilación.
 
-Prueba primero abrir la dirección del servidor en el navegador de la tablet: debe aparecer la página de acceso. Para una PC agente puedes comprobar `Test-NetConnection 192.168.0.10 -Port 8765`. No es necesario iniciar sesión como administrador en el navegador de una tablet para imprimir.
+Cierra la versión anterior con **Salir** antes de actualizar el EXE. Datos Windows: `%LOCALAPPDATA%\JADPrint`. Se conserva esa ruta para mantener cuentas, colas, permisos y vinculaciones de versiones anteriores. Los códigos antiguos simples siguen siendo compatibles en los clientes que ya conservan una dirección; para nuevas instalaciones genera códigos PT3 con el servidor 0.3.0.
 
-## Formatos y opciones
+## Alojamiento opcional del servidor
 
-- PDF, PNG y JPEG; máximo 25 MB por archivo y 25 megapíxeles por imagen.
-- Entre 1 y 20 copias, ajustar al papel o tamaño real, color o monocromo, papel del controlador, A4 o Carta.
-- Tickets y etiquetas: configura rollo 80/58 mm o etiqueta en el controlador de Windows y envía un **PDF de las dimensiones correctas**, con papel del controlador y tamaño real. La conversión de imagen no genera automáticamente una etiqueta de medidas exactas.
-- Utiliza el controlador instalado en Windows: la marca no basta para garantizar compatibilidad. Debe probarse cada combinación de modelo, controlador y tamaño de papel. No se implementaron corte de papel, cajón de dinero, ESC/POS directo ni protocolos propietarios.
-- Word, Excel y páginas web deben exportarse o compartirse como PDF. Esta versión no añade un servicio de impresión al diálogo nativo Android: se usa la APK o su destino de Compartir.
-- Evita seleccionar impresoras virtuales que abran un diálogo para guardar archivos; el agente está diseñado para impresoras físicas que imprimen sin interacción.
+Las PCs y móviles solo necesitan sus instaladores. Si se elige un alojamiento Python administrado, el código incluye `pc/central_server.py`, `requirements-server.txt` y una plantilla opcional `render.yaml`. Esa plantilla utiliza almacenamiento persistente y puede generar cargos; no se ha aplicado ni contratado un servicio.
 
-## Estados y reintentos
+En un alojamiento Python configura:
 
-- **En espera**: guardado en el servidor, aún no recogido por la PC. Puede esperar a que vuelva a conectarse.
-- **Entregado a PC · sin confirmar**: el agente recibió el trabajo. Una interrupción en este punto exige revisar la PC; no se reenvía automáticamente al motor.
-- **Enviado a Windows**: el motor informó entrega al controlador. No significa que salió papel; una impresora sin papel puede conservar el trabajo en su cola.
-- **Error**: revisa el mensaje y la cola Windows antes de crear otro trabajo.
-- **Resultado incierto**: hubo interrupción o el motor no respondió a tiempo. Revisa la cola y el documento físico antes de repetir.
+- `PRINTER_TAB_DATA`: ruta persistente de la base de datos y la cola.
+- `PRINTER_TAB_ADMIN_EMAIL` y `PRINTER_TAB_ADMIN_PASSWORD` (o `PRINTER_TAB_ADMIN_PASSWORD_FILE`): solo crean la cuenta en la primera instalación; no cambian una cuenta existente. Guarda la contraseña como secreto del alojamiento.
+- `PORT`: puerto interno del servicio, predeterminado 8765.
+- `PRINTER_TAB_PUBLIC_URL`: dirección pública HTTPS, cuando no la proporcione automáticamente el alojamiento. Render entrega `RENDER_EXTERNAL_URL`, que se utiliza para los códigos si no hay una dirección guardada en la consola.
 
-Los reintentos de carga desde la APK conservan el identificador y el archivo en su almacenamiento privado, incluso al reiniciarla. El servidor rechaza reutilizar el mismo identificador para otro contenido. Una confirmación perdida no crea otra entrada. Esta protección reduce duplicados; no garantiza entrega física exactamente una vez ante fallos de hardware o del controlador.
+La entrada de inicio es `python pc/central_server.py`. Usa almacenamiento persistente: las bases de datos y archivos de la cola no deben perderse al reiniciar/publicar. La versión administra una cuenta por servidor y no implementa verificación ni recuperación por correo. La impresión por Internet y las rutas VPN reales deben probarse en el despliegue elegido.
 
-Si un envío queda pendiente en la tablet, usa **Reintentar envío pendiente**. Si el servidor lo había aceptado, devuelve el mismo trabajo. No desvincules/reinstales la APK para resolver una confirmación perdida: perderías su identificador local. Revisa el historial primero.
+## Desarrollo y pruebas
 
-Desactivar una tablet bloquea sus nuevas solicitudes. Retirar un permiso también impide entregar trabajos aún en espera. Los ya entregados al agente no se pueden recuperar; revisa la cola Windows. Desactivar una PC impide que reciba nuevos trabajos.
+Servidor/agente en `pc/`; Android nativo en `android/`; panel Windows en `tools/Launcher.cs`. `tools/build.ps1` genera ambos instaladores; `-WindowsOnly` omite recompilar Android. Runtime incluido: Python 3.13.9, Pillow 12.0.0 y openpyxl 3.1.5. Compilación Android con JDK 21 y SDK 35; Windows con .NET Framework e Inno Setup 6. Las rutas pueden ajustarse en el script.
 
-## Datos y operación
-
-Configuración e historial: `%LOCALAPPDATA%\JADPrint\hub`. Vinculación del agente: `%LOCALAPPDATA%\JADPrint\agent`. Son datos del usuario Windows que ejecuta cada componente; inicia siempre con ese usuario. El desinstalador conserva los datos de la cuenta.
-
-La contraseña se almacena con sal y PBKDF2. Los códigos son temporales y de un solo uso. Los tokens de dispositivos se verifican mediante su hash en el servidor; el agente conserva su token en la carpeta privada de su usuario. No compartas estos archivos ni la carpeta de datos. La APK desactiva el respaldo Android de sus datos.
-
-El transporte HTTP inicial está pensado para red confiable o VPN. Un dominio HTTPS puede configurarse delante del servidor sin cambiar el protocolo de la APK. No incluye recuperación de contraseña, actualizaciones automáticas, servicio de Windows ni hospedaje público.
-
-Los archivos se borran del servidor al recibir un resultado terminal del agente; los trabajos sin recoger o sin confirmar conservan su archivo. La cola admite 100 trabajos pendientes; el historial tiene un límite de 10 000 y depura resultados con más de 30 días al alcanzarlo. Respalda la carpeta del servidor con ambos componentes detenidos. Los trabajos cuyo resultado sea incierto no se reimprimen al recuperar un respaldo.
-
-## Compilación y pruebas
-
-Fuentes del servidor y agente en `pc/`; Android nativo Java en `android/`. `tools/prepare_build.py` descarga dependencias oficiales en `.build/`. `tools/build.ps1 -WindowsOnly` recompila solo el instalador Windows; sin ese argumento compila también la APK. `tools/build.ps1` compila la APK con SDK 35 y JDK 21 y genera el instalador con Inno Setup 6. Las rutas de JDK e Inno deben ajustarse si la máquina de compilación usa otras ubicaciones. Instala Pillow 12.0.0 en el Python embebido antes de compilar. El icono se puede regenerar con `tools/make_icon.py`. Los detalles de licencias y fuentes están en `THIRD-PARTY-NOTICES.txt`.
-
-La clave de firma Android se guarda fuera del proyecto en `%LOCALAPPDATA%\JADPrint\signing`; consérvala para publicar actualizaciones sobre esta APK. No se incluye en los entregables.
-
-Pruebas del protocolo y permisos: `python -m unittest discover -s tests -v`. Las pruebas usan datos temporales y agentes simulados; no envían trabajos a las impresoras reales.
-
-Para dar esta versión por lista para operación, aún se requiere instalarla en dos PCs y una tablet reales, probar el enrutamiento entre sus redes y validar PDF/carta, ticket y etiqueta en los modelos concretos que utilices.
+Pruebas: `python -m unittest discover -s tests -v` con las dependencias de `requirements-server.txt`. Usan datos temporales y no imprimen en equipos reales. Clave Android fuera del repositorio: `%LOCALAPPDATA%\JADPrint\signing`; consérvala para futuras actualizaciones. No se publican claves, contraseñas, inventarios reales ni datos de cuentas.

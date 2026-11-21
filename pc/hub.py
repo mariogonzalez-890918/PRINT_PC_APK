@@ -48,6 +48,9 @@ class Service:
               token TEXT UNIQUE, enabled INTEGER DEFAULT 1, seen REAL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS printers(id TEXT PRIMARY KEY, pc TEXT, name TEXT, available INTEGER);
             CREATE TABLE IF NOT EXISTS grants(tablet TEXT, printer TEXT, PRIMARY KEY(tablet,printer));
+            CREATE TABLE IF NOT EXISTS printer_sharing(printer TEXT PRIMARY KEY, enabled INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS inventories(device TEXT PRIMARY KEY, received REAL, payload TEXT);
+            CREATE TABLE IF NOT EXISTS inventory_requests(id TEXT PRIMARY KEY, device TEXT, created REAL, status TEXT);
             CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, tablet TEXT, printer TEXT, pc TEXT,
               name TEXT, mime TEXT, copies INTEGER, scale TEXT, paper TEXT, color TEXT,
               fingerprint TEXT, status TEXT, message TEXT, created REAL, updated REAL);
@@ -142,6 +145,22 @@ class Service:
             row = db.execute('SELECT email FROM owner').fetchone()
             return row[0] if row else None
 
+    def public_url(self):
+        with self.db() as db:
+            row=db.execute("SELECT value FROM branding WHERE key='public_url'").fetchone()
+            return str(row[0]) if row else ''
+
+    def set_public_url(self, value):
+        from network_config import normalize_url
+        url=normalize_url(value) if value.strip() else ''
+        with self.lock,self.db() as db:
+            if url:db.execute("INSERT INTO branding VALUES('public_url',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(url,))
+            else:db.execute("DELETE FROM branding WHERE key='public_url'")
+
+    def registration_urls(self, port):
+        from registration import server_urls
+        return [self.public_url()] if self.public_url() else server_urls(port)
+
     def admin(self, token):
         with self.db() as db:
             return bool(db.execute('SELECT 1 FROM sessions WHERE token=? AND expires>?',
@@ -175,7 +194,48 @@ class Service:
             return [dict(r) for r in db.execute('''SELECT p.id,p.name,d.name AS pc,
               CASE WHEN p.available=1 AND d.seen>? THEN 1 ELSE 0 END AS online
               FROM printers p JOIN devices d ON d.id=p.pc JOIN grants g ON g.printer=p.id
-              WHERE g.tablet=? AND d.enabled=1 ORDER BY d.name,p.name''', (time.time()-45, tablet))]
+              LEFT JOIN printer_sharing ps ON ps.printer=p.id
+              WHERE g.tablet=? AND d.enabled=1 AND COALESCE(ps.enabled,1)=1 ORDER BY d.name,p.name''', (time.time()-45, tablet))]
+
+    def request_inventory(self, device):
+        with self.lock,self.db() as db:
+            if not db.execute('SELECT 1 FROM devices WHERE id=? AND enabled=1',(device,)).fetchone():
+                raise ValueError('Equipo no disponible.')
+            pending=db.execute("SELECT id FROM inventory_requests WHERE device=? AND status='pending'",(device,)).fetchone()
+            if pending:return pending['id']
+            request_id=str(uuid.uuid4())
+            db.execute('INSERT INTO inventory_requests VALUES(?,?,?,?)',(request_id,device,time.time(),'pending'))
+            return request_id
+
+    def pending_inventory(self, device):
+        with self.db() as db:
+            row=db.execute("SELECT id FROM inventory_requests WHERE device=? AND status='pending' ORDER BY created LIMIT 1",(device,)).fetchone()
+            return row['id'] if row else None
+
+    def save_inventory(self, device, payload, request_id=None):
+        if not isinstance(payload,dict) or payload.get('platform') not in ('Windows','Android'):
+            raise ValueError('Inventario inválido.')
+        if not isinstance(payload.get('summary'),dict) or not isinstance(payload.get('components',[]),list):
+            raise ValueError('Resumen o componentes inválidos.')
+        data=json.dumps(payload,ensure_ascii=False)
+        if len(data.encode())>512*1024 or len(payload.get('components',[]))>500:
+            raise ValueError('Inventario demasiado grande.')
+        with self.lock,self.db() as db:
+            if request_id:
+                row=db.execute('SELECT 1 FROM inventory_requests WHERE id=? AND device=?',(request_id,device)).fetchone()
+                if not row:raise PermissionError('Solicitud de auditoría ajena o inexistente.')
+            db.execute('INSERT INTO inventories VALUES(?,?,?) ON CONFLICT(device) DO UPDATE SET received=excluded.received,payload=excluded.payload',(device,time.time(),data))
+            if request_id:db.execute("UPDATE inventory_requests SET status='complete' WHERE id=?",(request_id,))
+
+    def inventory_list(self):
+        with self.db() as db:
+            result=[]
+            for row in db.execute('''SELECT d.id,d.name,d.role,d.enabled,i.received,i.payload,
+                (SELECT count(*) FROM inventory_requests r WHERE r.device=d.id AND r.status='pending') AS pending
+                FROM devices d LEFT JOIN inventories i ON i.device=d.id ORDER BY d.name'''):
+                item=dict(row);payload=item.pop('payload');item['inventory']=json.loads(payload) if payload else None
+                result.append(item)
+            return result
 
     def heartbeat(self, pc, printers):
         if not isinstance(printers, list) or len(printers) > 200:
@@ -227,7 +287,8 @@ class Service:
                     raise ValueError('El identificador ya pertenece a otro trabajo.')
                 return dict(old)
             printer = db.execute('''SELECT p.* FROM printers p JOIN grants g ON g.printer=p.id
-              JOIN devices d ON d.id=p.pc WHERE p.id=? AND g.tablet=? AND d.enabled=1''', (pid,tablet)).fetchone()
+              JOIN devices d ON d.id=p.pc LEFT JOIN printer_sharing ps ON ps.printer=p.id
+              WHERE p.id=? AND g.tablet=? AND d.enabled=1 AND COALESCE(ps.enabled,1)=1''', (pid,tablet)).fetchone()
             if not printer:
                 raise PermissionError('Esta impresora no está compartida con tu tablet.')
             if db.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','claimed')").fetchone()[0] >= MAX_PENDING:
@@ -253,7 +314,8 @@ class Service:
             # Revoked permissions also stop jobs that have not yet been handed to a PC.
             revoked = db.execute('''SELECT j.id FROM jobs j WHERE j.pc=? AND j.status='queued' AND
               NOT EXISTS(SELECT 1 FROM grants g JOIN devices t ON t.id=g.tablet
-                WHERE g.tablet=j.tablet AND g.printer=j.printer AND t.enabled=1)''', (pc,)).fetchall()
+                LEFT JOIN printer_sharing ps ON ps.printer=g.printer
+                WHERE g.tablet=j.tablet AND g.printer=j.printer AND t.enabled=1 AND COALESCE(ps.enabled,1)=1)''', (pc,)).fetchall()
             for row in revoked:
                 db.execute("UPDATE jobs SET status='error',message='Permiso retirado',updated=? WHERE id=?", (time.time(),row['id']))
                 (self.files / row['id']).unlink(missing_ok=True)
@@ -311,8 +373,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             raise ValueError('Transferencia incompleta.')
         return content
 
-    def body_json(self):
-        value = json.loads(self.read_body(128*1024))
+    def body_json(self, limit=128*1024):
+        value = json.loads(self.read_body(limit))
         if not isinstance(value, dict):
             raise ValueError('Objeto JSON requerido.')
         return value
@@ -331,6 +393,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             self.route(method, urllib.parse.urlsplit(self.path).path)
         except PermissionError as e:
+            if urllib.parse.urlsplit(self.path).path in ('/api/login','/api/enroll'):
+                self.server.auth_failure(self.client_address[0])
             self.respond({'error':str(e)},403)
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as e:
             self.respond({'error': str(e)},400)
@@ -341,6 +405,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def route(self, method, path):
         s = self.service
+        if method=='POST' and path in ('/api/login','/api/enroll') and not self.server.auth_allowed(self.client_address[0]):
+            self.respond({'error':'Demasiados intentos incorrectos. Espera un minuto antes de volver a intentar.'},429)
+            return
+        if method=='GET' and path=='/api/health':
+            self.respond({'service':'PRINTER-TAB','version':'0.3.0','ready':bool(s.owner_email())})
+            return
         if method == 'GET' and path == '/branding/logo':
             logo = s.logo()
             self.respond(logo if logo else (Path(__file__).parent/'default-logo.svg').read_bytes(),mime='image/png' if logo else 'image/svg+xml')
@@ -370,6 +440,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path.startswith('/api/admin/'):
             if not s.admin(self.token()):
                 raise PermissionError('Inicia sesión como administrador.')
+            if method=='GET' and path=='/api/admin/inventory':
+                self.respond({'devices':s.inventory_list()})
+                return
+            if method=='GET' and path=='/api/admin/inventory.xlsx':
+                from inventory import export_xlsx
+                self.respond(export_xlsx(s.inventory_list()),mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                return
+            if method=='POST' and path=='/api/admin/inventory/request':
+                self.respond({'id':s.request_inventory(self.body_json()['device'])})
+                return
+            if method=='POST' and path=='/api/admin/service-url':
+                s.set_public_url(self.body_json()['url'])
+                self.respond({'ok':True})
+                return
             if method == 'POST' and path == '/api/admin/register-pc':
                 b=self.body_json()
                 self.respond(s.register_pc(b['name'],b['printers']),201)
@@ -399,9 +483,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             if method == 'GET' and path.endswith('/state'):
                 with s.db() as db:
-                    self.respond({'email':s.owner_email(),
+                    self.respond({'email':s.owner_email(),'service_url':s.public_url(),
                        'devices':[dict(r) for r in db.execute('SELECT id,name,role,enabled,seen FROM devices ORDER BY role,name')],
-                       'printers':[dict(r) for r in db.execute('SELECT * FROM printers ORDER BY name')],
+                       'printers':[dict(r) for r in db.execute('SELECT p.*,COALESCE(ps.enabled,1) AS shared FROM printers p LEFT JOIN printer_sharing ps ON ps.printer=p.id ORDER BY p.name')],
                        'grants':[dict(r) for r in db.execute('SELECT * FROM grants')],
                        'jobs':[dict(r) for r in db.execute('SELECT * FROM jobs ORDER BY created DESC LIMIT 100')]})
                 return
@@ -414,20 +498,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         code = secrets.token_hex(5).upper()
                         db.execute('DELETE FROM codes WHERE expires<?', (time.time(),))
                         db.execute('INSERT INTO codes VALUES(?,?,?)',(digest(code),b['role'],time.time()+900))
-                        self.respond({'code':code,'minutes':15})
+                        from registration import make_registration
+                        registration=make_registration(s.owner_email(),code,b['role'],s.registration_urls(self.server.server_port))
+                        db.commit()
+                        self.respond({'code':code,'registration':registration,'minutes':15})
                     elif path.endswith('/device'):
                         db.execute('UPDATE devices SET enabled=? WHERE id=?',(1 if b['enabled'] else 0,b['id']))
+                        db.commit()
+                        self.respond({'ok':True})
+                    elif path.endswith('/printer-sharing'):
+                        if not db.execute('SELECT 1 FROM printers WHERE id=?',(b['printer'],)).fetchone():
+                            raise ValueError('Impresora inválida.')
+                        db.execute('INSERT INTO printer_sharing VALUES(?,?) ON CONFLICT(printer) DO UPDATE SET enabled=excluded.enabled',(b['printer'],1 if b['enabled'] else 0))
+                        db.commit()
                         self.respond({'ok':True})
                     elif path.endswith('/grants'):
                         if not isinstance(b['printers'],list) or len(b['printers']) > 200:
                             raise ValueError('Selección inválida.')
-                        if not db.execute("SELECT 1 FROM devices WHERE id=? AND role='tablet'",(b['tablet'],)).fetchone():
-                            raise ValueError('Tablet inválida.')
+                        if not db.execute("SELECT 1 FROM devices WHERE id=? AND role IN ('pc','tablet')",(b['tablet'],)).fetchone():
+                            raise ValueError('Equipo inválido.')
                         for pid in b['printers']:
                             if not db.execute('SELECT 1 FROM printers WHERE id=?',(pid,)).fetchone():
                                 raise ValueError('Impresora inválida.')
                         db.execute('DELETE FROM grants WHERE tablet=?',(b['tablet'],))
                         db.executemany('INSERT INTO grants VALUES(?,?)',[(b['tablet'],p) for p in set(b['printers'])])
+                        db.commit()
                         self.respond({'ok':True})
                     else:
                         self.respond({'error':'Ruta inexistente'},404)
@@ -441,6 +536,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             if method == 'POST' and path.endswith('/heartbeat'):
                 s.heartbeat(pc,self.body_json()['printers'])
+                self.respond({'ok':True,'inventory_request':s.pending_inventory(pc)})
+                return
+            if method=='POST' and path=='/api/pc/inventory':
+                b=self.body_json(600*1024)
+                s.save_inventory(pc,b['inventory'],b.get('request'))
                 self.respond({'ok':True})
                 return
             if method == 'POST' and path.endswith('/claim'):
@@ -460,8 +560,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     raise PermissionError('Archivo no disponible.')
                 self.respond((s.files / job_id).read_bytes(),mime='application/octet-stream')
                 return
-        if path.startswith('/api/tablet/'):
-            tablet = s.device(self.token(),'tablet')['id']
+        if path.startswith('/api/tablet/') or path.startswith('/api/client/'):
+            tablet = s.device(self.token(),'tablet' if path.startswith('/api/tablet/') else None)['id']
+            if method=='POST' and path=='/api/client/heartbeat':
+                self.body_json()
+                with s.db() as db:db.execute('UPDATE devices SET seen=? WHERE id=?',(time.time(),tablet))
+                self.respond({'ok':True,'inventory_request':s.pending_inventory(tablet)})
+                return
+            if method=='POST' and path=='/api/client/inventory':
+                b=self.body_json(600*1024)
+                s.save_inventory(tablet,b['inventory'],b.get('request'))
+                self.respond({'ok':True})
+                return
             if method == 'GET' and path.endswith('/printers'):
                 self.respond({'printers':s.printer_list(tablet)})
                 return
@@ -469,7 +579,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 with s.db() as db:
                     self.respond({'jobs':[dict(r) for r in db.execute('SELECT * FROM jobs WHERE tablet=? ORDER BY created DESC LIMIT 30',(tablet,))]})
                 return
-            if method == 'POST' and path.startswith('/api/tablet/jobs/'):
+            if method == 'POST' and (path.startswith('/api/tablet/jobs/') or path.startswith('/api/client/jobs/')):
                 job_id = path.rsplit('/',1)[-1]
                 try:
                     options = json.loads(base64.b64decode(self.headers['X-Print-Options'],validate=True))
@@ -484,7 +594,21 @@ class Server(http.server.ThreadingHTTPServer):
     def __init__(self, address, service):
         self.service = service
         self.slots = threading.BoundedSemaphore(16)
+        self.auth_lock=threading.Lock()
+        self.auth_failures={}
         super().__init__(address,Handler)
+
+    def auth_allowed(self, address):
+        with self.auth_lock:
+            if len(self.auth_failures)>1024:self.auth_failures.clear()
+            recent=[t for t in self.auth_failures.get(address,[]) if t>time.time()-60]
+            self.auth_failures[address]=recent
+            return len(recent)<20
+
+    def auth_failure(self, address):
+        with self.auth_lock:
+            if len(self.auth_failures)>1024:self.auth_failures.clear()
+            self.auth_failures.setdefault(address,[]).append(time.time())
 
     def process_request(self, request, address):
         if not self.slots.acquire(blocking=False):
@@ -516,7 +640,7 @@ def run(home, port=8765, interactive=True):
     server = Server(('0.0.0.0',port),s)
     print(f'\nConsola administrador: http://localhost:{port}')
     print(f'Cuenta: {s.owner_email()}')
-    print('PRINTER-TAB · Servidor iniciado. Puerto TCP 8765 en la red privada.')
+    print(f'PRINTER-TAB · Servidor iniciado. Puerto TCP {port}.')
     print('En otras PCs y tablets usa la IP LAN de ESTA PC, no localhost.')
     try:
         ips = sorted({a[4][0] for a in socket.getaddrinfo(socket.gethostname(),None,socket.AF_INET)})

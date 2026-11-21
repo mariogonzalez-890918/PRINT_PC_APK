@@ -6,3 +6,7 @@ __pycache__/
 *.jks
 *.keystore
 password.txt
+.env
+.env.*
+data/
+secrets/

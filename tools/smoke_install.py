@@ -7,7 +7,7 @@ root=Path(__file__).resolve().parents[1]
 target=(root / '.build' / 'install-test').resolve()
 if not target.is_relative_to((root / '.build').resolve()):
     raise RuntimeError('Ruta de prueba fuera del proyecto.')
-installer=root / 'dist' / 'PRINTER-TAB-Instalador-0.2.1.exe'
+installer=root / 'dist' / 'PRINTER-TAB-Instalador-0.3.0.exe'
 subprocess.run([str(installer),'/CURRENTUSER','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',
                 '/NOICONS','/TASKS=','/DIR='+str(target),'/LOG='+str(root/'.build'/'install.log')],check=True,timeout=90)
 try:

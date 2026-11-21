@@ -56,14 +56,15 @@ class PrintPanel : Form {
         var serverRow=new FlowLayoutPanel {Dock=DockStyle.Fill};
         startHub=Button(serverRow,"Iniciar servidor",()=>StartHub());
         Button(serverRow,"Abrir administración",()=>OpenConsole(""));
-        Button(serverRow,"Detener servidor",()=>Stop("hub"));layout.Controls.Add(serverRow,0,2);
+        Button(serverRow,"Detener servicios",()=>{Stop("agent");Stop("hub");});layout.Controls.Add(serverRow,0,2);
         var agentRow=new FlowLayoutPanel {Dock=DockStyle.Fill};
         startAgent=Button(agentRow,"Iniciar impresión",()=>StartAgent());
         Button(agentRow,"Compartir impresoras",()=>SharePrinters());
-        Button(agentRow,"Vincular por código",()=>EnrollAgent());layout.Controls.Add(agentRow,0,3);
+        Button(agentRow,"Unir con código",()=>EnrollAgent());layout.Controls.Add(agentRow,0,3);
         var assignmentRow=new FlowLayoutPanel {Dock=DockStyle.Fill};
-        Button(assignmentRow,"Asignar impresoras a tablets",()=>AssignPrinters(),280);
-        Button(assignmentRow,"Detener impresión",()=>Stop("agent"));layout.Controls.Add(assignmentRow,0,4);
+        Button(assignmentRow,"Asignar a equipos",()=>AssignPrinters(),205);
+        Button(assignmentRow,"Imprimir archivo",()=>PrintRemote(),180);
+        Button(assignmentRow,"Inventario / Excel",()=>OpenConsole("#inventory"),180);layout.Controls.Add(assignmentRow,0,4);
         var tools=new FlowLayoutPanel {Dock=DockStyle.Fill};
         Button(tools,"Logo / icono / contraseña",()=>OpenConsole("#branding"),240);
         Button(tools,"Minimizar a bandeja",()=>{Hide();tray.Visible=true;},200);
@@ -104,8 +105,10 @@ class PrintPanel : Form {
             var info=json.Deserialize<Dictionary<string,object>>(await Bridge("status"));
             hubConfigured=(bool)info["hub_configured"];agentConfigured=(bool)info["agent_configured"];
             email=info.ContainsKey("email")?Convert.ToString(info["email"]):"";
-            consoleUrl=info.ContainsKey("url")?Convert.ToString(info["url"]):"http://localhost:8765";
-            account.Text=email.Length>0?"Cuenta local: "+email:"Configura el servidor o vincula esta PC para comenzar.";
+            string nextServer=info.ContainsKey("url")?Convert.ToString(info["url"]):"http://localhost:8765";
+            if(!String.Equals(consoleUrl,nextServer,StringComparison.OrdinalIgnoreCase))adminToken="";
+            consoleUrl=nextServer;
+            account.Text=email.Length>0?"Cuenta: "+email:"Únete con correo y código de registro, o inicia el servidor.";
             string custom=info.ContainsKey("logo")?Convert.ToString(info["logo"]):"";
             string customIcon=info.ContainsKey("icon")?Convert.ToString(info["icon"]):"";
             if(customIcon!=lastIcon){ApplyIcon(customIcon);lastIcon=customIcon;}
@@ -125,7 +128,7 @@ class PrintPanel : Form {
         try {var type=Type.GetTypeFromProgID("WScript.Shell");if(type==null)return;object shell=Activator.CreateInstance(type);try{foreach(string path in shortcuts){if(!File.Exists(path))continue;object link=type.InvokeMember("CreateShortcut",BindingFlags.InvokeMethod,null,shell,new object[]{path});try{link.GetType().InvokeMember("IconLocation",BindingFlags.SetProperty,null,link,new object[]{iconPath+",0"});link.GetType().InvokeMember("Save",BindingFlags.InvokeMethod,null,link,null);}finally{Marshal.FinalReleaseComObject(link);}}}finally{Marshal.FinalReleaseComObject(shell);}}
         catch(Exception e){Append("Icono aplicado al panel; no se pudieron actualizar accesos directos: "+e.Message);}
     }
-    void UpdateState(){state.Text="Servidor: "+(Running(hub)?"activo en http://localhost:8765":"detenido en este panel")+"   ·   Impresión: "+(Running(agent)?"activa":"detenida en este panel");startHub.Text=hubConfigured?"Iniciar servidor":"Crear cuenta / servidor";startAgent.Text=agentConfigured?"Iniciar impresión":"Vincular e iniciar";}
+    void UpdateState(){state.Text="Servidor: "+(Running(hub)?"activo en http://localhost:8765":"detenido en este panel")+"   ·   Impresión: "+(Running(agent)?"activa":"detenida en este panel");startHub.Text=hubConfigured?"Iniciar servidor":"Crear servidor (TI)";startAgent.Text=agentConfigured?"Iniciar impresión":"Unir cliente (código)";}
     Process StartChild(string mode) {
         var p=new Process {StartInfo=Command(mode),EnableRaisingEvents=true};
         p.OutputDataReceived+=(s,e)=>{if(e.Data!=null)Append(e.Data);};p.ErrorDataReceived+=(s,e)=>{if(e.Data!=null)Append(e.Data);};
@@ -141,9 +144,10 @@ class PrintPanel : Form {
         hub=StartChild("hub");UpdateState();Append("Usa Abrir administración para gestionar tablets, impresoras y logo.");
     }
     async Task EnrollAgent() {
-        if(agentConfigured){ShowError("Esta PC ya está vinculada. Pulsa Iniciar impresión.");return;}
-        var fields=Dialog("Vincular PC · genera un código de PC en la consola",new[]{"Servidor (URL)","Correo de la cuenta","Código de PC","Nombre de esta PC"},new[]{"http://localhost:8765",email,"",Environment.MachineName},new[]{false,false,false,false});if(fields==null)return;
-        working=true;try{Append(await Bridge("configure-agent",new{url=fields[0],email=fields[1],code=fields[2],name=fields[3]}));}finally{working=false;}await LoadStatus();
+        if(Running(agent)){ShowError("Detén la impresión antes de cambiar la vinculación.");return;}
+        if(agentConfigured&&MessageBox.Show(this,"Esta PC ya está registrada. ¿Unirla con un nuevo código? La vinculación anterior quedará guardada como respaldo.","PRINTER-TAB",MessageBoxButtons.YesNo)!=DialogResult.Yes)return;
+        var fields=Dialog("Unir PC · correo y código de registro del servidor",new[]{"Correo de la cuenta","Código de registro completo (PT3...)","Nombre de esta PC"},new[]{email,"",Environment.MachineName},new[]{false,false,false});if(fields==null)return;
+        working=true;try{Append(await Bridge("configure-agent",new{email=fields[0],code=fields[1],name=fields[2],replace=agentConfigured}));}finally{working=false;}await LoadStatus();
     }
     async Task StartAgent(){if(Running(agent)){Append("La impresión ya está activa en este panel.");return;}if(!agentConfigured)await EnrollAgent();if(agentConfigured){agent=StartChild("agent");UpdateState();}}
     Dictionary<string,object> AdminPayload(){return new Dictionary<string,object>{{"url",consoleUrl},{"token",adminToken}};}
@@ -158,24 +162,23 @@ class PrintPanel : Form {
         }finally{working=false;}
     }
     async Task SharePrinters() {
-        var info=await AdminState();if(info==null)return;
+        if(!agentConfigured)await EnrollAgent();if(!agentConfigured)return;
         working=true;try {
-            var request=AdminPayload();request["name"]=Environment.MachineName;
-            var result=json.Deserialize<Dictionary<string,object>>(await Bridge("publish-printers",request));
+            var result=json.Deserialize<Dictionary<string,object>>(await Bridge("publish-client"));
             int count=0;foreach(object printer in (System.Collections.IEnumerable)result["printers"])count++;
-            Append("Impresoras de esta PC publicadas: "+count+". Pulsa Asignar impresoras a tablets para elegir los permisos.");
+            Append("Impresoras de esta PC publicadas: "+count+". Pulsa Asignar impresoras a equipos para elegir los permisos.");
         }finally{working=false;}
         await LoadStatus();
         if(!Running(agent)){agent=StartChild("agent");UpdateState();}
-        MessageBox.Show(this,"Las impresoras de esta PC ya aparecen en la cuenta.\n\nAhora pulsa Asignar impresoras a tablets, elige una tablet y marca sus impresoras permitidas.","PRINTER-TAB",MessageBoxButtons.OK,MessageBoxIcon.Information);
+        MessageBox.Show(this,"Las impresoras de esta PC ya aparecen en la cuenta.\n\nAhora pulsa Asignar impresoras a equipos, elige una tablet y marca sus impresoras permitidas.","PRINTER-TAB",MessageBoxButtons.OK,MessageBoxIcon.Information);
     }
     async Task AssignPrinters() {
         var data=await AdminState();if(data==null)return;
-        using(var form=new Form {Text="PRINTER-TAB · Asignar impresoras a tablets",Width=840,Height=650,MinimumSize=new Size(680,520),StartPosition=FormStartPosition.CenterParent,Font=Font,Icon=Icon}){
+        using(var form=new Form {Text="PRINTER-TAB · Asignar impresoras a equipos",Width=840,Height=650,MinimumSize=new Size(680,520),StartPosition=FormStartPosition.CenterParent,Font=Font,Icon=Icon}){
             var layout=new TableLayoutPanel {Dock=DockStyle.Fill,Padding=new Padding(20),ColumnCount=1,RowCount=6};
             foreach(int h in new[]{32,44,45})layout.RowStyles.Add(new RowStyle(SizeType.Absolute,h));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent,100));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,64));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,55));form.Controls.Add(layout);
-            layout.Controls.Add(new Label {Text="Selecciona la tablet y marca las impresoras que podrá utilizar.",Dock=DockStyle.Fill},0,0);
+            layout.Controls.Add(new Label {Text="Selecciona la PC, tablet o celular y marca sus impresoras permitidas.",Dock=DockStyle.Fill},0,0);
             var tablet=new ComboBox {Dock=DockStyle.Fill,DropDownStyle=ComboBoxStyle.DropDownList};layout.Controls.Add(tablet,0,1);
             var hint=new Label {Dock=DockStyle.Fill,ForeColor=Color.FromArgb(20,100,192)};layout.Controls.Add(hint,0,2);
             var printers=new CheckedListBox {Dock=DockStyle.Fill,CheckOnClick=true,HorizontalScrollbar=true,IntegralHeight=false};layout.Controls.Add(printers,0,3);
@@ -186,19 +189,45 @@ class PrintPanel : Form {
                 bool allowed=false;if(tablet.SelectedIndex>=0){string id=Convert.ToString(tablets[tablet.SelectedIndex]["id"]);foreach(var g in grants)if(Convert.ToString(g["tablet"])==id&&Convert.ToString(g["printer"])==Convert.ToString(p["id"]))allowed=true;}
                 printers.Items.Add(pc+" · "+Convert.ToString(p["name"])+(Convert.ToInt32(p["available"])==0?" (no disponible)":""),allowed);
             }resultLabel.Text="";};
-            Action fill=()=>{tablets.Clear();printerList.Clear();grants.Clear();tablet.Items.Clear();foreach(var d in Rows(data,"devices"))if(Convert.ToString(d["role"])=="tablet"){tablets.Add(d);tablet.Items.Add(Convert.ToString(d["name"])+(Convert.ToInt32(d["enabled"])==0?" (desactivada)":""));}foreach(var p in Rows(data,"printers"))printerList.Add(p);foreach(var g in Rows(data,"grants"))grants.Add(g);if(tablets.Count>0)tablet.SelectedIndex=0;else selection();hint.Text=tablets.Count==0?"Primero vincula una tablet con el botón Vincular tablet.":printerList.Count==0?"No hay impresoras: vuelve al panel y pulsa Compartir impresoras en cada PC.":"Tablets vinculadas: "+tablets.Count+" · Impresoras disponibles para asignar: "+printerList.Count;};
+            Action fill=()=>{tablets.Clear();printerList.Clear();grants.Clear();tablet.Items.Clear();foreach(var d in Rows(data,"devices"))if(Convert.ToString(d["role"])=="tablet"||Convert.ToString(d["role"])=="pc"){tablets.Add(d);tablet.Items.Add((Convert.ToString(d["role"])=="pc"?"PC · ":"Móvil · ")+Convert.ToString(d["name"])+(Convert.ToInt32(d["enabled"])==0?" (desactivada)":""));}foreach(var p in Rows(data,"printers"))printerList.Add(p);foreach(var g in Rows(data,"grants"))grants.Add(g);if(tablets.Count>0)tablet.SelectedIndex=0;else selection();hint.Text=tablets.Count==0?"Registra los equipos con un código de PC o de móvil.":printerList.Count==0?"No hay impresoras: vuelve al panel y pulsa Compartir impresoras en cada PC.":"Equipos registrados: "+tablets.Count+" · Impresoras disponibles para asignar: "+printerList.Count;};
             tablet.SelectedIndexChanged+=(s,e)=>selection();
             var actions=new FlowLayoutPanel {Dock=DockStyle.Fill};layout.Controls.Add(actions,0,4);
             Button(actions,"Guardar asignación",async()=>{
-                if(tablet.SelectedIndex<0){MessageBox.Show(form,"Vincula y selecciona una tablet primero.");return;}
+                if(tablet.SelectedIndex<0){MessageBox.Show(form,"Registra y selecciona un equipo primero.");return;}
                 string selectedName=tablet.Text;var selected=new List<string>();foreach(int i in printers.CheckedIndices)selected.Add(Convert.ToString(printerList[i]["id"]));
                 var request=AdminPayload();request["tablet"]=Convert.ToString(tablets[tablet.SelectedIndex]["id"]);request["printers"]=selected;
                 await Bridge("admin-grants",request);data=json.Deserialize<Dictionary<string,object>>(await Bridge("admin-state",AdminPayload()));grants.Clear();foreach(var g in Rows(data,"grants"))grants.Add(g);
                 resultLabel.Text="Asignación guardada para "+selectedName+". En la APK pulsa Actualizar impresoras.";
             },190);
             Button(actions,"Actualizar equipos",async()=>{data=json.Deserialize<Dictionary<string,object>>(await Bridge("admin-state",AdminPayload()));fill();},190);
-            Button(actions,"Vincular tablet",async()=>{var code=json.Deserialize<Dictionary<string,object>>(await Bridge("admin-code",AdminPayload()));MessageBox.Show(form,"En la APK introduce:\nServidor: "+consoleUrl+"\nCorreo: "+Convert.ToString(data["email"])+"\nCódigo: "+Convert.ToString(code["code"])+"\n\nEl código vence en 15 minutos. Si estás en la PC servidor, cambia localhost por su dirección IP en la tablet. Después pulsa Actualizar equipos.","Vincular tablet",MessageBoxButtons.OK,MessageBoxIcon.Information);},170);
+            Button(actions,"Código móvil",async()=>{var request=AdminPayload();request["role"]="tablet";var code=json.Deserialize<Dictionary<string,object>>(await Bridge("admin-code",request));Clipboard.SetText(Convert.ToString(code["registration"]));MessageBox.Show(form,"Código de móvil copiado. En la APK escribe el correo "+Convert.ToString(data["email"])+" y pega el código completo. Vence en 15 minutos y se usa una vez.","Registro de móvil");},170);
+            Button(actions,"Código PC",async()=>{var request=AdminPayload();request["role"]="pc";var code=json.Deserialize<Dictionary<string,object>>(await Bridge("admin-code",request));Clipboard.SetText(Convert.ToString(code["registration"]));MessageBox.Show(form,"Código de PC copiado. En el EXE usa Unir con código, el correo "+Convert.ToString(data["email"])+" y pega el código. Vence en 15 minutos.","Registro de PC");},150);
             fill();form.ShowDialog(this);
+        }
+    }
+    async Task PrintRemote() {
+        if(!agentConfigured){ShowError("Primero une la PC con correo y código de registro.");return;}
+        var data=json.Deserialize<Dictionary<string,object>>(await Bridge("client-state"));
+        var list=new List<Dictionary<string,object>>();foreach(var p in Rows(data,"printers"))list.Add(p);
+        bool pending=Convert.ToBoolean(data["pending"]);
+        using(var form=new Form {Text="PRINTER-TAB · Imprimir en otra PC",Width=680,Height=580,StartPosition=FormStartPosition.CenterParent,Font=Font,Icon=Icon}){
+            var panel=new TableLayoutPanel {Dock=DockStyle.Fill,Padding=new Padding(20),ColumnCount=1,RowCount=7};
+            foreach(int h in new[]{35,50,55,45,60})panel.RowStyles.Add(new RowStyle(SizeType.Absolute,h));panel.RowStyles.Add(new RowStyle(SizeType.Percent,100));panel.RowStyles.Add(new RowStyle(SizeType.Absolute,45));form.Controls.Add(panel);
+            panel.Controls.Add(new Label {Text="Solo aparecen impresoras autorizadas para esta PC.",Dock=DockStyle.Fill},0,0);
+            var printer=new ComboBox {Dock=DockStyle.Fill,DropDownStyle=ComboBoxStyle.DropDownList};foreach(var p in list)printer.Items.Add(Convert.ToString(p["pc"])+" · "+Convert.ToString(p["name"]));if(list.Count>0)printer.SelectedIndex=0;panel.Controls.Add(printer,0,1);
+            string file="";var choose=new Button {Text="Seleccionar PDF, PNG o JPG",Dock=DockStyle.Fill};var label=new Label {Dock=DockStyle.Fill,Text=pending?"Hay un envío sin confirmar: se reintentará con el mismo identificador.":"Selecciona un documento."};
+            choose.Click+=(s,e)=>{using(var dialog=new OpenFileDialog {Filter="Documentos imprimibles|*.pdf;*.png;*.jpg;*.jpeg"})if(dialog.ShowDialog(form)==DialogResult.OK){file=dialog.FileName;label.Text=Path.GetFileName(file);}};choose.Enabled=!pending;panel.Controls.Add(choose,0,2);panel.Controls.Add(label,0,3);
+            var copies=new NumericUpDown {Minimum=1,Maximum=20,Value=1,Width=100};if(pending){printer.Enabled=false;copies.Enabled=false;var old=(Dictionary<string,object>)data["pending_job"];var prior=(Dictionary<string,object>)old["options"];label.Text="Envío pendiente: "+Convert.ToString(prior["name"])+" · se conserva el destino original.";if(prior.ContainsKey("copies"))copies.Value=Convert.ToDecimal(prior["copies"]);for(int i=0;i<list.Count;i++)if(Convert.ToString(list[i]["id"])==Convert.ToString(prior["printer"]))printer.SelectedIndex=i;}var row=new FlowLayoutPanel {Dock=DockStyle.Fill};row.Controls.Add(new Label {Text="Copias:",AutoSize=true,Padding=new Padding(0,8,0,0)});row.Controls.Add(copies);panel.Controls.Add(row,0,4);
+            var history=new TextBox {ReadOnly=true,Multiline=true,ScrollBars=ScrollBars.Vertical,Dock=DockStyle.Fill};foreach(var job in Rows(data,"jobs"))history.AppendText(Convert.ToString(job["name"])+" · "+Convert.ToString(job["status"])+" · "+Convert.ToString(job["message"])+Environment.NewLine);panel.Controls.Add(history,0,5);
+            var actions=new FlowLayoutPanel {Dock=DockStyle.Fill};panel.Controls.Add(actions,0,6);
+            Button(actions,pending?"Reintentar pendiente":"Enviar a imprimir",async()=>{
+                if(!pending&&(file.Length==0||printer.SelectedIndex<0)){MessageBox.Show(form,"Elige un archivo y una impresora autorizada.");return;}
+                if(!pending&&MessageBox.Show(form,"¿Enviar "+Path.GetFileName(file)+" a "+printer.Text+"?","Confirmar impresión",MessageBoxButtons.YesNo)!=DialogResult.Yes)return;
+                object options=pending?null:new{printer=Convert.ToString(list[printer.SelectedIndex]["id"]),copies=(int)copies.Value,scale="fit",paper="driver",color="color"};
+                var sent=json.Deserialize<Dictionary<string,object>>(await Bridge("client-send",new{path=file,id=Guid.NewGuid().ToString(),options=options}));
+                MessageBox.Show(form,"Trabajo registrado: "+Convert.ToString(sent["id"])+". La PC destino debe estar encendida y con su agente activo.","PRINTER-TAB");form.Close();
+            },230);
+            form.ShowDialog(this);
         }
     }
     void OpenConsole(string suffix){Process.Start(new ProcessStartInfo(consoleUrl.TrimEnd('/')+"/"+suffix){UseShellExecute=true});}
@@ -207,7 +236,7 @@ class PrintPanel : Form {
     string[] Dialog(string title,string[] labels,string[] values,bool[] passwords) {
         using(var form=new Form {Text=title,Width=560,Height=180+labels.Length*78,StartPosition=FormStartPosition.CenterParent,FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false,Font=Font,Icon=Icon}){
             var inputs=new List<TextBox>();int y=18;
-            for(int i=0;i<labels.Length;i++){form.Controls.Add(new Label {Text=labels[i],Left=22,Top=y,Width=490,Height=22});var input=new TextBox {Left=22,Top=y+25,Width=490,Text=values[i],UseSystemPasswordChar=passwords[i],MaxLength=passwords[i]?200:300};form.Controls.Add(input);inputs.Add(input);y+=78;}
+            for(int i=0;i<labels.Length;i++){form.Controls.Add(new Label {Text=labels[i],Left=22,Top=y,Width=490,Height=22});var input=new TextBox {Left=22,Top=y+25,Width=490,Text=values[i],UseSystemPasswordChar=passwords[i],MaxLength=passwords[i]?200:8192};form.Controls.Add(input);inputs.Add(input);y+=78;}
             var ok=new Button {Text="Guardar",Left=302,Top=y+10,Width=100,Height=36,DialogResult=DialogResult.OK};var cancel=new Button {Text="Cancelar",Left=412,Top=y+10,Width=100,Height=36,DialogResult=DialogResult.Cancel};form.Controls.Add(ok);form.Controls.Add(cancel);form.AcceptButton=ok;form.CancelButton=cancel;
             if(form.ShowDialog(this)!=DialogResult.OK)return null;return inputs.ConvertAll(i=>i.Text).ToArray();
         }

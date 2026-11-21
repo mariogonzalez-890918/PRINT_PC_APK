@@ -10,6 +10,10 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.StatFs;
+import android.app.ActivityManager;
 import android.provider.OpenableColumns;
 import android.text.InputType;
 import android.view.View;
@@ -37,6 +41,8 @@ public class MainActivity extends Activity {
     private String selectedName="",selectedMime="";
     private Uri incoming;
     private boolean busy=false;
+    private final Handler monitor=new Handler(Looper.getMainLooper());
+    private final Runnable monitorTask=new Runnable(){public void run(){if(prefs!=null&&prefs.contains("token")&&!busy)async(()->pollInventory(false));monitor.postDelayed(this,60000);}};
     private String currentScreen="connect";
     private static final int BLUE=0xff1464c0,INK=0xff19304d,GRAY=0xff60758b;
 
@@ -78,14 +84,16 @@ public class MainActivity extends Activity {
     private interface Work {void run() throws Exception;}
     private void async(Work task){if(busy)return;busy=true;updateButton();worker.execute(()->{try{task.run();}catch(Exception e){runOnUiThread(()->say(friendly(e)));}finally{runOnUiThread(()->{busy=false;updateButton();if(incoming!=null&&"print".equals(currentScreen)){Uri uri=incoming;incoming=null;loadFile(uri);}});}});}
     private String friendly(Exception e){if(e instanceof SocketTimeoutException)return "No hubo confirmación del servidor. Si estabas enviando, reintenta el mismo trabajo; se conservará su identificador.";if(e instanceof ConnectException||e instanceof UnknownHostException)return "No se pudo conectar. Revisa la dirección del servidor, el Wi-Fi y que la consola esté abierta.";return e.getMessage()!=null?e.getMessage():"No se pudo completar la operación.";}
-    private byte[] request(String url,String token,String method,byte[] body,String mime,String options) throws Exception{
-        HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setConnectTimeout(12000);c.setReadTimeout(45000);c.setInstanceFollowRedirects(false);c.setRequestMethod(method);
+    private static class HttpFailure extends IOException {final int status;HttpFailure(int status,String message){super(message);this.status=status;}}
+    private byte[] request(String url,String token,String method,byte[] body,String mime,String options) throws Exception{return request(url,token,method,body,mime,options,12000,45000);}
+    private byte[] request(String url,String token,String method,byte[] body,String mime,String options,int connectMs,int readMs) throws Exception{
+        HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setConnectTimeout(connectMs);c.setReadTimeout(readMs);c.setInstanceFollowRedirects(false);c.setRequestMethod(method);
         if(!token.isEmpty())c.setRequestProperty("Authorization","Bearer "+token);
         if(options!=null)c.setRequestProperty("X-Print-Options",options);
         try{
             if(body!=null){c.setDoOutput(true);c.setRequestProperty("Content-Type",mime);c.setFixedLengthStreamingMode(body.length);try(OutputStream out=c.getOutputStream()){out.write(body);}}
             int status=c.getResponseCode();InputStream stream=status>=200&&status<300?c.getInputStream():c.getErrorStream();byte[] data=stream==null?new byte[0]:read(stream,2*1024*1024);
-            if(status<200||status>=300){String error="Error HTTP "+status;try{error=new JSONObject(new String(data,StandardCharsets.UTF_8)).optString("error",error);}catch(Exception ignored){}throw new IOException(error);}
+            if(status<200||status>=300){String error="Error HTTP "+status;try{error=new JSONObject(new String(data,StandardCharsets.UTF_8)).optString("error",error);}catch(Exception ignored){}throw new HttpFailure(status,error);}
             return data;
         }finally{c.disconnect();}
     }
@@ -94,24 +102,35 @@ public class MainActivity extends Activity {
 
     private void showConnect(){
         currentScreen="connect";content.removeAllViews();printButton=null;
-        LinearLayout c=card("Vincular esta tablet");c.addView(text("El administrador genera un código de tablet y decide qué impresoras puedes usar.",15,GRAY,false));
-        EditText url=input(c,"Dirección del servidor",InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);url.setText(prefs.getString("url","http://"));
+        LinearLayout c=card("Unir este equipo a tu cuenta");c.addView(text("El administrador genera un código de registro completo. Únete con tu correo y ese código; las impresoras se autorizan desde la consola.",15,GRAY,false));
         EditText email=input(c,"Correo de la cuenta",InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);email.setText(prefs.getString("email",""));
         EditText name=input(c,"Nombre de esta tablet",InputType.TYPE_CLASS_TEXT);name.setText(android.os.Build.MODEL);
-        EditText code=input(c,"Código de vinculación",InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+        EditText code=input(c,"Código de registro completo (PT3...)",InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE);code.setSingleLine(false);code.setMinLines(3);code.setMaxLines(6);code.setTextSize(14);code.setLayoutParams(new LinearLayout.LayoutParams(-1,dp(108)));code.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(8192)});
         button(c,"Vincular",()->{
-            final String address=url.getText().toString().trim().replaceAll("/+$","");
             final String mail=email.getText().toString().trim(),device=name.getText().toString().trim(),pair=code.getText().toString().trim();
             async(()->{
-                URI u=new URI(address);if(!Arrays.asList("http","https").contains(u.getScheme())||u.getHost()==null||u.getRawUserInfo()!=null||!(u.getPath()==null||u.getPath().isEmpty())||u.getQuery()!=null||u.getFragment()!=null)throw new IOException("Usa una dirección como http://192.168.0.10:8765");
-                JSONObject b=new JSONObject().put("email",mail).put("name",device).put("code",pair).put("role","tablet");
-                JSONObject result=new JSONObject(new String(request(address+"/api/enroll","","POST",b.toString().getBytes(StandardCharsets.UTF_8),"application/json",null),StandardCharsets.UTF_8));
+                JSONArray urls=new JSONArray();String rawCode=pair;
+                if(pair.startsWith("PT3.")){
+                    JSONObject registration;
+                    try{registration=new JSONObject(new String(android.util.Base64.decode(pair.substring(4),android.util.Base64.URL_SAFE|android.util.Base64.NO_WRAP),StandardCharsets.UTF_8));}catch(Exception error){throw new IOException("El código de registro está incompleto o no es válido.");}
+                    if(!"PRINTER-TAB".equals(registration.optString("service"))||registration.optInt("version")!=3||!"tablet".equals(registration.optString("role")))throw new IOException("Usa un código de registro para tablet o celular, no un código de PC.");
+                    if(!mail.equalsIgnoreCase(registration.optString("email")))throw new IOException("El correo no corresponde al código de registro.");
+                    urls=registration.getJSONArray("urls");rawCode=registration.getString("code");if(urls.length()<1||urls.length()>12)throw new IOException("Direcciones del registro inválidas.");
+                }else if(prefs.contains("url")){urls.put(base());}else throw new IOException("Pega el código completo PT3... que genera el servidor actualizado.");
+                JSONObject b=new JSONObject().put("email",mail).put("name",device).put("code",rawCode).put("role","tablet");
+                JSONObject result=null;String address="";Exception last=null;
+                for(int i=0;i<urls.length();i++){
+                    address=normalizeServer(urls.getString(i));
+                    try{result=new JSONObject(new String(request(address+"/api/enroll","","POST",b.toString().getBytes(StandardCharsets.UTF_8),"application/json",null,3500,8000),StandardCharsets.UTF_8));break;}
+                    catch(HttpFailure error){throw error;}catch(IOException error){last=error;}
+                }
+                if(result==null)throw new IOException("No se pudo llegar al servidor del código. Verifica que esté encendido y accesible por Internet, red local o VPN. "+(last==null?"":last.getMessage()));
                 prefs.edit().putString("url",address).putString("email",mail).putString("token",result.getString("token")).commit();
                 runOnUiThread(()->{say("Tablet vinculada. El administrador debe compartirte impresoras.");showPrint();});
                 JSONArray list=api("tablet/printers",null).getJSONArray("printers");runOnUiThread(()->applyPrinters(list));
             });
         });
-        c.addView(text("Red local o VPN. Si cable y Wi-Fi usan subredes distintas, el router debe permitir llegar a este servidor.",14,GRAY,false));
+        c.addView(text("Red local, VPN o servidor público por HTTPS. El administrador puede solicitar inventario de marca, modelo, sistema, CPU, RAM y almacenamiento mientras la APK esté abierta.",14,GRAY,false));
     }
     private void showPrint(){
         currentScreen="print";content.removeAllViews();
@@ -130,6 +149,8 @@ public class MainActivity extends Activity {
         if(prefs.contains("pending"))button(settings,"Descartar envío local",()->new AlertDialog.Builder(this).setTitle("Descartar envío local").setMessage("Esto no cancela un trabajo aceptado por el servidor. Revisa el historial y la cola de Windows antes de imprimirlo de nuevo.").setNegativeButton("Volver",null).setPositiveButton("Ya revisé; descartar",(d,w)->{prefs.edit().remove("pending").commit();new File(getFilesDir(),"pending.bin").delete();showPrint();say("Envío local descartado. Los trabajos aceptados permanecen en el servidor.");}).show());
         if(prefs.contains("pending"))say("Hay un envío sin confirmar. Reintenta el mismo trabajo o consulta el historial antes de enviar otro.");
         LinearLayout more=card("Tu cuenta");more.addView(text(prefs.getString("email","")+"\n"+base(),14,GRAY,false));button(more,"Ver historial",this::showHistory);
+        button(more,"Enviar inventario del equipo",()->async(()->pollInventory(true)));
+        button(more,"Probar conexión",()->async(()->{JSONObject health=new JSONObject(new String(request(base()+"/api/health","","GET",null,"application/json",null,5000,5000),StandardCharsets.UTF_8));if(!"PRINTER-TAB".equals(health.optString("service")))throw new IOException("La dirección no corresponde a PRINTER-TAB.");runOnUiThread(()->say("Conexión al servidor correcta. Cuenta: "+prefs.getString("email","")));}));
         button(more,"Desvincular tablet",()->new AlertDialog.Builder(this).setTitle("Desvincular tablet").setMessage("Necesitarás un código nuevo. Los trabajos aceptados permanecen en el servidor.").setNegativeButton("Cancelar",null).setPositiveButton("Desvincular",(d,w)->{prefs.edit().remove("token").remove("pending").apply();new File(getFilesDir(),"pending.bin").delete();selectedFile=null;allPrinters=new JSONArray();showConnect();}).show());
         applyPrinters(allPrinters);updateButton();
     }
@@ -186,5 +207,29 @@ public class MainActivity extends Activity {
             for(int i=0;i<jobs.length();i++){JSONObject j=jobs.optJSONObject(i);LinearLayout c=card(j.optString("name"));c.addView(text(status(j.optString("status")),17,BLUE,true));c.addView(text(j.optString("message"),14,GRAY,false));c.addView(text(new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm",Locale.getDefault()).format(new Date((long)(j.optDouble("created")*1000)))+" · "+j.optInt("copies")+" copia(s)",14,GRAY,false));}
         });
     });}
-    @Override protected void onDestroy(){worker.shutdown();super.onDestroy();}
+    private String normalizeServer(String address) throws Exception{
+        URI u=new URI(address.trim().replaceAll("/+$",""));String host=u.getHost();
+        if(!Arrays.asList("http","https").contains(u.getScheme())||host==null||u.getRawUserInfo()!=null||!(u.getPath()==null||u.getPath().isEmpty())||u.getQuery()!=null||u.getFragment()!=null)throw new IOException("El código contiene una dirección inválida.");
+        int port=u.getPort();if(port<0&&"http".equals(u.getScheme())&&(host.matches("[0-9.]+")||host.equalsIgnoreCase("localhost")))port=8765;
+        return new URI(u.getScheme(),null,host,port,null,null,null).toASCIIString();
+    }
+    private JSONObject androidInventory() throws Exception{
+        ActivityManager.MemoryInfo memory=new ActivityManager.MemoryInfo();((ActivityManager)getSystemService(ACTIVITY_SERVICE)).getMemoryInfo(memory);
+        StatFs storage=new StatFs(getFilesDir().getAbsolutePath());android.util.DisplayMetrics screen=getResources().getDisplayMetrics();
+        JSONObject summary=new JSONObject().put("manufacturer",android.os.Build.MANUFACTURER).put("model",android.os.Build.MODEL).put("os","Android").put("os_version",android.os.Build.VERSION.RELEASE).put("cpu",android.os.Build.HARDWARE).put("processors",Runtime.getRuntime().availableProcessors()).put("ram_bytes",memory.totalMem).put("storage_bytes",storage.getTotalBytes());
+        JSONArray components=new JSONArray();components.put(new JSONObject().put("category","Sistema").put("data",new JSONObject().put("SDK",android.os.Build.VERSION.SDK_INT).put("Parche",android.os.Build.VERSION.SECURITY_PATCH).put("ABI",new JSONArray(Arrays.asList(android.os.Build.SUPPORTED_ABIS)))));
+        components.put(new JSONObject().put("category","Pantalla").put("data",new JSONObject().put("Ancho px",screen.widthPixels).put("Alto px",screen.heightPixels).put("Densidad dpi",screen.densityDpi)));
+        components.put(new JSONObject().put("category","Almacenamiento interno").put("data",new JSONObject().put("Total bytes",storage.getTotalBytes()).put("Disponible bytes",storage.getAvailableBytes())));
+        return new JSONObject().put("platform","Android").put("summary",summary).put("components",components).put("errors",new JSONArray().put("Android limita el acceso a identificadores y detalle físico de componentes; se reportan los datos disponibles sin permisos adicionales."));
+    }
+    private void pollInventory(boolean manual) throws Exception{
+        JSONObject heartbeat=api("client/heartbeat",new JSONObject());String requestId=heartbeat.optString("inventory_request","");if("null".equals(requestId))requestId="";
+        if(manual||!requestId.isEmpty()){
+            JSONObject body=new JSONObject().put("inventory",androidInventory());if(!requestId.isEmpty())body.put("request",requestId);
+            api("client/inventory",body);runOnUiThread(()->say("Inventario del equipo enviado al administrador."));
+        }
+    }
+    @Override protected void onResume(){super.onResume();monitor.postDelayed(monitorTask,10000);}
+    @Override protected void onPause(){monitor.removeCallbacks(monitorTask);super.onPause();}
+    @Override protected void onDestroy(){monitor.removeCallbacks(monitorTask);worker.shutdown();super.onDestroy();}
 }

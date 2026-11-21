@@ -8,19 +8,34 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 
 def main():
     parser = argparse.ArgumentParser(description='PRINTER-TAB · Consola y agente de impresión')
-    parser.add_argument('mode',nargs='?',choices=['hub','agent','status','configure-hub','configure-agent','admin-login','admin-state','admin-grants','admin-code','publish-printers'])
+    parser.add_argument('mode',nargs='?',choices=['hub','agent','status','configure-hub','configure-agent','admin-login','admin-state','admin-grants','admin-code','publish-printers','client-state','client-send','publish-client'])
     parser.add_argument('--headless',action='store_true')
     args = parser.parse_args()
     mode = args.mode
     home = Path(os.environ.get('LOCALAPPDATA','.')) / 'JADPrint'
+    if mode in ('client-state','client-send','publish-client'):
+        from agent import api,printers
+        path=home/'agent'/'agent.json'
+        if not path.exists():raise ValueError('Primero une esta PC con correo y código de registro.')
+        config=json.loads(path.read_text(encoding='utf-8'))
+        if mode=='client-state':
+            result=api(config,'client/printers');result.update(api(config,'client/jobs'))
+            result['pending']=(home/'sender'/'pending.json').exists()
+            if result['pending']:result['pending_job']=json.loads((home/'sender'/'pending.json').read_text(encoding='utf-8'))
+            print(json.dumps(result))
+        elif mode=='publish-client':
+            names=printers();api(config,'pc/heartbeat',{'printers':names});print(json.dumps({'printers':names}))
+        else:
+            from client import send_file
+            data=json.loads(sys.stdin.readline())
+            print(json.dumps(send_file(config,home,data.get('options'),data.get('path'),data.get('id'))))
+        return
     if mode in ('admin-login','admin-state','admin-grants','admin-code','publish-printers'):
         from agent import api,atomic_json,printers
         from urllib.parse import urlsplit
         data=json.loads(sys.stdin.readline())
-        url=data['url'].strip().rstrip('/')
-        parsed=urlsplit(url)
-        if parsed.scheme not in ('http','https') or not parsed.hostname or parsed.path or parsed.query or parsed.fragment or parsed.username:
-            raise ValueError('Dirección del servidor inválida.')
+        from network_config import normalize_url
+        url=normalize_url(data['url'])
         config={'url':url,'token':data.get('token','')}
         if mode=='admin-login':
             session=api(config,'login',{'email':data['email'],'password':data['password']})
@@ -31,7 +46,7 @@ def main():
         elif mode=='admin-grants':
             print(json.dumps(api(config,'admin/grants',{'tablet':data['tablet'],'printers':data['printers']})))
         elif mode=='admin-code':
-            print(json.dumps(api(config,'admin/code',{'role':'tablet'})))
+            print(json.dumps(api(config,'admin/code',{'role':data.get('role','tablet')})))
         else:
             # Verify the administrator session before reading/publishing any device data.
             api(config,'admin/state')
@@ -59,7 +74,7 @@ def main():
             logo = service.logo()
             icon = service.icon()
             result.update(hub_configured=bool(service.owner_email()),email=service.owner_email(),logo=base64.b64encode(logo).decode() if logo else None,icon=base64.b64encode(icon).decode() if icon else None)
-        if not result['hub_configured'] and result['agent_configured']:
+        if result['agent_configured']:
             from agent import api,atomic_json
             config = json.loads((home/'agent'/'agent.json').read_text(encoding='utf-8'))
             result.update(email=config['email'],url=config['url'])
@@ -82,18 +97,22 @@ def main():
         return
     if mode == 'configure-agent':
         from agent import api,atomic_json
-        from urllib.parse import urlsplit
         data = json.loads(sys.stdin.readline())
-        url = data['url'].strip().rstrip('/')
-        parsed = urlsplit(url)
-        if parsed.scheme not in ('http','https') or not parsed.hostname or parsed.path or parsed.query or parsed.fragment or parsed.username:
-            raise ValueError('Dirección del servidor inválida.')
         path = home/'agent'/'agent.json'
         if path.exists():
-            raise ValueError('Esta PC ya está vinculada.')
-        config = {'url':url}
-        config.update(api(config,'enroll',{'email':data['email'].strip(),'code':data['code'].strip(),'name':data['name'].strip(),'role':'pc'}))
+            if not data.get('replace'):raise ValueError('Esta PC ya está vinculada.')
+            if (home/'agent'/'inflight.json').exists() or (home/'sender'/'pending.json').exists():
+                raise ValueError('Hay un trabajo sin confirmar. Revisa el servidor actual antes de cambiar la vinculación.')
+        if data['code'].strip().startswith('PT3.'):
+            from registration import join
+            config=join(data['email'].strip(),data['code'].strip(),data['name'].strip(),'pc')
+        else:
+            from network_config import normalize_url
+            config={'url':normalize_url(data['url'])}
+            config.update(api(config,'enroll',{'email':data['email'].strip(),'code':data['code'].strip(),'name':data['name'].strip(),'role':'pc'}))
         path.parent.mkdir(parents=True,exist_ok=True)
+        if path.exists():
+            (path.parent/'agent.previous.json').write_bytes(path.read_bytes())
         atomic_json(path,config)
         print('PC vinculada correctamente.')
         return

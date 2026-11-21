@@ -7,6 +7,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 def api(config, path, body=None, binary=False, timeout=35):
     data = json.dumps(body).encode() if body is not None else None
@@ -105,6 +106,9 @@ def run(home, interactive=True):
     print('Servidor:',config['url'],'\nCuenta:',config['email'])
     marker = home / 'inflight.json'
     last_heartbeat = 0
+    audit_pool=ThreadPoolExecutor(max_workers=1)
+    audit_future=None
+    audit_request=None
     while True:
         try:
             if marker.exists():
@@ -113,8 +117,19 @@ def run(home, interactive=True):
                 marker.unlink()
             if time.time()-last_heartbeat > 15:
                 names = printers()
-                api(config,'pc/heartbeat',{'printers':names})
+                response=api(config,'pc/heartbeat',{'printers':names})
+                requested=response.get('inventory_request')
+                if requested and audit_future is None:
+                    from inventory import collect_windows
+                    audit_request=requested
+                    audit_future=audit_pool.submit(collect_windows)
                 last_heartbeat = time.time()
+            if audit_future is not None and audit_future.done():
+                try:snapshot=audit_future.result()
+                except Exception as e:snapshot={'platform':'Windows','summary':{},'components':[],'errors':[str(e)[:500]]}
+                api(config,'pc/inventory',{'request':audit_request,'inventory':snapshot})
+                print('Auditoría de componentes enviada al administrador.',flush=True)
+                audit_future=None;audit_request=None
             job = api(config,'pc/claim',{})['job']
             if job:
                 report = {'id':job['id'],'status':'unknown',
@@ -135,3 +150,4 @@ def run(home, interactive=True):
         except Exception as e:
             print('Conexión pendiente:',str(e)[:250],flush=True)
             time.sleep(10)
+    audit_pool.shutdown(wait=False,cancel_futures=True)

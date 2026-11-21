@@ -1,4 +1,4 @@
-PRINTER-TAB 0.2.0 - third-party components
+PRINTER-TAB 0.3.0 - third-party components
 
 Python 3.13.9 (embedded Windows runtime)
 Copyright Python Software Foundation and contributors.
@@ -22,3 +22,12 @@ https://www.sumatrapdfreader.org/
 
 Android SDK build tools and JDK are used for building only and are not included
 in either the Android APK or the Windows installer.
+
+openpyxl 3.1.5 - MIT License
+https://openpyxl.readthedocs.io/
+Source: https://foss.heptapod.net/openpyxl/openpyxl
+License in runtime/Lib/site-packages/openpyxl-3.1.5.dist-info/
+
+et-xmlfile 2.0.0 - MIT License
+https://foss.heptapod.net/openpyxl/et_xmlfile
+License in runtime/Lib/site-packages/et_xmlfile-2.0.0.dist-info/

@@ -1,13 +1,12 @@
-# Validación de PRINTER-TAB 0.2.1
+# Validación de PRINTER-TAB 0.3.0
 
-- 20 pruebas automatizadas aprobadas (incluye las anteriores): permisos, impresión entre dos PCs, reintentos sin duplicar, colas persistentes, contraseñas desde 4 caracteres, cambio de contraseña, validación y persistencia de logo/icono, control de acceso y configuración gráfica mediante el backend sin preguntas de terminal.
-- Pruebas nuevas: publicación de impresoras locales sin código, reutilización de la PC sin duplicarla, asignación independiente de impresoras de dos PCs a dos tablets, revocación y rechazo de cambios no autorizados.
-- Asignación web verificada con datos de ejemplo: desmarcar una impresora y Guardar asignación conserva la selección. Evidencia en dist/PRINTER-TAB-asignacion-0.2.1.jpg.
-- EXE 0.2.1 compilado con botones Compartir impresoras y Asignar impresoras a tablets. La APK permanece en 0.2.0.
-- APK con nombre PRINTER-TAB, versión 0.2.0 y código de versión 2. Paquete com.jad.print y certificado SHA-256 2176325ddc84fbb0ccd613e8a8a61ec7e9d31a85c3c0c59767a9a7ddcbdf6809 idénticos a la versión anterior. Firma v2/v3 verificada.
-- Panel gráfico Windows compilado como aplicación Windows (winexe), con icono, botones, bandeja y la leyenda completa del Área de TI GMP. Revisión visual en Windows sin CMD; imagen en dist/PRINTER-TAB-panel-0.2.0.png.
-- Actualización verificada instalando 0.2.0 sobre 0.1.0 en una carpeta aislada: cuenta conservada, ejecutable antiguo retirado, panel PRINTER-TAB instalado y backend nuevo reconoce la cuenta. Desinstalación de la prueba completada.
+- 29 pruebas automatizadas aprobadas: registro por correo/código PT3, uso único, correspondencia de correo y rol, URL central configurada por administrador, impresión de PC a PC, aislamiento por equipo, compartición global de impresoras, reintentos sin duplicar trabajos, revocación y confirmación de guardado después del commit, auditorías de Windows y Android, acceso administrativo al inventario, reporte por equipo y exportación a Excel sin fórmulas ejecutables procedentes de datos recibidos.
+- APK compilada con SDK 35, mínimo Android 8, versión 0.3.0 y versionCode 3. Paquete com.jad.print y certificado SHA-256 2176325ddc84fbb0ccd613e8a8a61ec7e9d31a85c3c0c59767a9a7ddcbdf6809 conservados. Verificación de firma v2/v3 y comprobación de que el DEX incluye registro PT3 e inventario.
+- EXE de Windows compilado como winexe con Python, Pillow y openpyxl incluidos. Los clientes no requieren instalar Python ni Docker.
+- Consulta de componentes Windows probada en modo lectura, sin imprimir ni enviar el inventario real a servicios externos.
+- Consola de auditoría verificada con datos de ejemplo de Windows y Android. Descarga real del Excel verificada: hojas Equipos y Componentes, tres equipos y cuatro filas de propiedades de componentes. Captura en dist/PRINTER-TAB-auditoria-0.3.0.jpg.
+- Pruebas previas de actualización 0.1.0 a 0.2.0 conservaron la cuenta y retiraron el ejecutable anterior. La migración de esquema 0.3.0 conserva tablas y añade las de auditoría/compartición; la persistencia se verifica en pruebas temporales.
 
-Pendiente: ejecución de la APK en tablets reales y pruebas de impresión física en los modelos de impresora utilizados. Estas validaciones no permiten prometer ausencia de fallos ni compatibilidad universal.
+Pendiente: ejecutar la APK en dispositivos reales, probar impresión física y los caminos reales de LAN/VPN. La publicación de un servidor accesible desde datos móviles sin VPN NO está activada: requiere alojamiento o acceso público configurado. No exige comprar un dominio propio; los códigos incorporan la dirección del servicio que configure el administrador.
 
-La cuenta por correo sigue alojada en un servidor local; no incluye hospedaje en Internet. Las claves privadas de firma, credenciales y datos de cuentas no se publican.
+El proyecto incluye una plantilla opcional de alojamiento Python; no se contrató ni desplegó ningún servicio. El inventario es reportado por los agentes, con los campos que permita cada sistema. No se publican claves, contraseñas ni inventarios reales.

@@ -21,5 +21,7 @@ with tempfile.TemporaryDirectory(prefix='jadprint-preview-') as folder:
     with s.db() as db:
         for p in db.execute('SELECT id FROM printers').fetchall():
             db.execute('INSERT INTO grants VALUES(?,?)',(devices[2]['id'],p['id']))
+    s.save_inventory(devices[0]['id'],{'platform':'Windows','summary':{'manufacturer':'Fabricante de prueba','model':'PC de muestra','os':'Windows','os_version':'Versión de prueba','cpu':'CPU de muestra','processors':8,'ram_bytes':16*1024**3,'storage_bytes':512*1024**3},'components':[{'category':'RAM','data':{'Capacidad GB':16,'Tipo':'Memoria de muestra'}}],'errors':[]})
+    s.save_inventory(devices[2]['id'],{'platform':'Android','summary':{'manufacturer':'Fabricante de prueba','model':'Tablet de muestra','os':'Android','os_version':'Versión de prueba','cpu':'CPU móvil de muestra','processors':8,'ram_bytes':4*1024**3,'storage_bytes':64*1024**3},'components':[{'category':'Pantalla','data':{'Ancho px':1280,'Alto px':800}}],'errors':[]})
     print('PREVIEW http://127.0.0.1:8766',flush=True)
     Server(('127.0.0.1',8766),s).serve_forever()
