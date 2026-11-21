@@ -60,11 +60,12 @@ public class MainActivity extends Activity {
         root.setPadding(dp(18),dp(12),dp(18),dp(12));
         setContentView(root);
         root.setOnApplyWindowInsetsListener((v,insets)->{v.setPadding(dp(18)+insets.getSystemWindowInsetLeft(),dp(12)+insets.getSystemWindowInsetTop(),dp(18)+insets.getSystemWindowInsetRight(),dp(12)+insets.getSystemWindowInsetBottom());return insets;});
-        root.addView(text("JAD Print",28,INK,true));
+        root.addView(text("PRINTER-TAB",28,INK,true));
         root.addView(text("Tus PCs. Tus impresoras.",14,GRAY,false));
         notice=text("",14,INK,false);notice.setPadding(0,dp(12),0,dp(12));notice.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);root.addView(notice);
         ScrollView scroll=new ScrollView(this);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);scroll.addView(content);
+        TextView credits=text("Aplicaciones gestionadas, desarrolladas y administradas por Área de TI GMP · sistemas@grupomipan.com",12,GRAY,false);credits.setPadding(0,dp(10),0,0);android.text.util.Linkify.addLinks(credits,android.text.util.Linkify.EMAIL_ADDRESSES);root.addView(credits);
     }
     private TextView text(String value,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);if(bold)t.setTypeface(null,Typeface.BOLD);return t;}
     private LinearLayout card(String title){LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(dp(18),dp(18),dp(18),dp(18));GradientDrawable bg=new GradientDrawable();bg.setColor(Color.WHITE);bg.setCornerRadius(dp(14));c.setBackground(bg);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(16);content.addView(c,lp);TextView h=text(title,20,INK,true);h.setPadding(0,0,0,dp(12));c.addView(h);return c;}

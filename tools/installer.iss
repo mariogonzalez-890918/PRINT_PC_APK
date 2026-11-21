@@ -1,19 +1,21 @@
-[Setup]
+﻿[Setup]
 AppId={{35063ED7-9DB3-45CD-BE74-BFAF9F15BBE9}
-AppName=JAD Print
-AppVersion=0.1.0
-AppPublisher=JAD
-DefaultDirName={localappdata}\Programs\JAD Print
-DefaultGroupName=JAD Print
+AppName=PRINTER-TAB
+AppVersion=0.2.0
+AppPublisher=Área de TI GMP
+DefaultDirName={localappdata}\Programs\PRINTER-TAB
+DefaultGroupName=PRINTER-TAB
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=JADPrint-Instalador-0.1.0
+OutputBaseFilename=PRINTER-TAB-Instalador-0.2.0
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-UninstallDisplayIcon={app}\JADPrint.exe
+SetupIconFile=..\pc\app.ico
+UsePreviousGroup=no
+UninstallDisplayIcon={app}\PRINTER-TAB.exe
 CloseApplications=yes
 SetupLogging=yes
 
@@ -21,7 +23,7 @@ SetupLogging=yes
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "Crear accesos directos en el escritorio"; Flags: unchecked
+Name: "desktopicon"; Description: "Crear acceso directo PRINTER-TAB en el escritorio"
 Name: "startupagent"; Description: "Iniciar el agente de impresión al entrar a Windows (después de vincular esta PC)"; Flags: unchecked
 
 [Files]
@@ -30,12 +32,19 @@ Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Consola administrador"; Filename: "{app}\JADPrint.exe"; Parameters: "hub"
-Name: "{group}\Agente de impresión"; Filename: "{app}\JADPrint.exe"; Parameters: "agent"
-Name: "{group}\Desinstalar JAD Print"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\JAD Print - Consola"; Filename: "{app}\JADPrint.exe"; Parameters: "hub"; Tasks: desktopicon
-Name: "{autodesktop}\JAD Print - Agente"; Filename: "{app}\JADPrint.exe"; Parameters: "agent"; Tasks: desktopicon
-Name: "{userstartup}\JAD Print - Agente"; Filename: "{app}\JADPrint.exe"; Parameters: "agent"; Tasks: startupagent
+Name: "{group}\PRINTER-TAB"; Filename: "{app}\PRINTER-TAB.exe"
+Name: "{group}\Desinstalar PRINTER-TAB"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\PRINTER-TAB"; Filename: "{app}\PRINTER-TAB.exe"; Tasks: desktopicon
+Name: "{userstartup}\PRINTER-TAB"; Filename: "{app}\PRINTER-TAB.exe"; Parameters: "agent"; Tasks: startupagent
+
+[InstallDelete]
+Type: files; Name: "{app}\JADPrint.exe"
+Type: files; Name: "{autodesktop}\JAD Print - Consola.lnk"
+Type: files; Name: "{autodesktop}\JAD Print - Agente.lnk"
+Type: files; Name: "{userstartup}\JAD Print - Agente.lnk"
+Type: files; Name: "{userprograms}\JAD Print\Consola administrador.lnk"
+Type: files; Name: "{userprograms}\JAD Print\Agente de impresión.lnk"
+Type: files; Name: "{userprograms}\JAD Print\Desinstalar JAD Print.lnk"
 
 [Run]
-Filename: "{app}\JADPrint.exe"; Description: "Abrir JAD Print"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\PRINTER-TAB.exe"; Description: "Abrir PRINTER-TAB"; Flags: nowait postinstall skipifsilent

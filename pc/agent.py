@@ -8,12 +8,12 @@ import time
 import urllib.error
 import urllib.request
 
-def api(config, path, body=None, binary=False):
+def api(config, path, body=None, binary=False, timeout=35):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(config['url'] + '/api/' + path, data=data,
           headers={'Authorization':'Bearer '+config.get('token',''), 'Content-Type':'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=35) as response:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
             result = response.read(26*1024*1024)
             return result if binary else json.loads(result)
     except urllib.error.HTTPError as e:
@@ -58,7 +58,7 @@ def execute_print(config, job, home):
                 ImageOps.exif_transpose(image).convert('RGB').save(pdf,'PDF',resolution=150)
         engine = Path(__file__).resolve().parent.parent / 'engine' / 'SumatraPDF.exe'
         if not engine.is_file():
-            raise ValueError('Falta el motor de impresión. Reinstala JAD Print.')
+            raise ValueError('Falta el motor de impresión. Reinstala PRINTER-TAB.')
         settings = [str(job['copies'])+'x',job['scale'],job['color']]
         if job['paper'] != 'driver':
             settings.append('paper='+job['paper'])
@@ -75,13 +75,15 @@ def execute_print(config, job, home):
         source.unlink(missing_ok=True)
         pdf.unlink(missing_ok=True)
 
-def run(home):
+def run(home, interactive=True):
     home = Path(home)
     home.mkdir(parents=True,exist_ok=True)
     path = home / 'agent.json'
     if path.exists():
         config = json.loads(path.read_text(encoding='utf-8'))
     else:
+        if not interactive:
+            raise ValueError('Primero vincula la PC desde el panel PRINTER-TAB.')
         print('\nVincular esta PC. Genera un código de PC en la consola administrador.')
         url = input('Servidor (ejemplo http://192.168.0.10:8765): ').strip().rstrip('/')
         from urllib.parse import urlsplit

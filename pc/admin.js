@@ -37,3 +37,25 @@ $('loginForm').onsubmit=async e=>{e.preventDefault();try{const r=await api('logi
 $('addPC').onclick=safely(()=>pair('pc'));$('addTablet').onclick=safely(()=>pair('tablet'));$('refresh').onclick=safely(refresh);
 $('logout').onclick=()=>{sessionStorage.removeItem('jadPrintAdmin');token='';$('dashboard').hidden=true;$('login').hidden=false;message('Sesión cerrada en este navegador.');};
 if(token)safely(refresh)();
+const refreshLogo=()=>{$('brandLogo').src='/branding/logo?v='+Date.now();};
+$('saveLogo').onclick=safely(async()=>{
+ const file=$('logoFile').files[0];if(!file)throw Error('Selecciona una imagen para el logo.');
+ if(file.size>2*1024*1024)throw Error('El logo debe pesar hasta 2 MB.');
+ const r=await fetch('/api/admin/logo',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':file.type||'application/octet-stream'},body:file});
+ const result=await r.json();if(!r.ok)throw Error(result.error||'No se pudo guardar el logo.');
+ $('logoFile').value='';refreshLogo();message('Logo guardado. También se actualizará al volver al panel de Windows.');
+});
+$('resetLogo').onclick=safely(async()=>{await api('admin/logo/reset',{});refreshLogo();message('Logo original restaurado.');});
+$('passwordForm').onsubmit=async e=>{e.preventDefault();try{
+ if($('newPassword').value!==$('repeatPassword').value)throw Error('Las contraseñas nuevas no coinciden.');
+ await api('admin/password',{current:$('currentPassword').value,password:$('newPassword').value});
+ $('passwordForm').reset();message('Contraseña actualizada. Las otras sesiones de administrador se cerraron.');
+}catch(error){message(error.message);}};
+$('saveIcon').onclick=safely(async()=>{
+ const file=$('iconFile').files[0];if(!file)throw Error('Selecciona un archivo para el icono.');
+ if(file.size>2*1024*1024)throw Error('El icono debe pesar hasta 2 MB.');
+ const r=await fetch('/api/admin/icon',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':file.type||'application/octet-stream'},body:file});
+ const result=await r.json();if(!r.ok)throw Error(result.error||'No se pudo guardar el icono.');
+ $('iconFile').value='';message('Icono guardado. Vuelve al panel de Windows para aplicarlo a la ventana, bandeja y accesos directos.');
+});
+$('resetIcon').onclick=safely(async()=>{await api('admin/icon/reset',{});message('Icono original restaurado. Vuelve al panel de Windows para aplicarlo.');});

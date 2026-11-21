@@ -7,11 +7,11 @@ root=Path(__file__).resolve().parents[1]
 target=(root / '.build' / 'install-test').resolve()
 if not target.is_relative_to((root / '.build').resolve()):
     raise RuntimeError('Ruta de prueba fuera del proyecto.')
-installer=root / 'dist' / 'JADPrint-Instalador-0.1.0.exe'
+installer=root / 'dist' / 'PRINTER-TAB-Instalador-0.2.0.exe'
 subprocess.run([str(installer),'/CURRENTUSER','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',
                 '/NOICONS','/TASKS=','/DIR='+str(target),'/LOG='+str(root/'.build'/'install.log')],check=True,timeout=90)
 try:
-    for name in ['JADPrint.exe','runtime/python.exe','engine/SumatraPDF.exe','pc/main.py','pc/admin.html']:
+    for name in ['PRINTER-TAB.exe','runtime/python.exe','engine/SumatraPDF.exe','pc/main.py','pc/admin.html']:
         if not (target/name).is_file():
             raise RuntimeError('Falta archivo instalado: '+name)
     subprocess.run([str(target/'runtime/python.exe'),str(target/'pc/main.py'),'--help'],check=True,timeout=20)

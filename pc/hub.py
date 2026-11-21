@@ -7,6 +7,7 @@ import getpass
 import hashlib
 import hmac
 import http.server
+import io
 import json
 import os
 from pathlib import Path
@@ -41,6 +42,7 @@ class Service:
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS owner(email TEXT PRIMARY KEY, salt TEXT, password TEXT);
             CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, expires REAL);
+            CREATE TABLE IF NOT EXISTS branding(key TEXT PRIMARY KEY, value BLOB);
             CREATE TABLE IF NOT EXISTS codes(code TEXT PRIMARY KEY, role TEXT, expires REAL);
             CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY, name TEXT, role TEXT,
               token TEXT UNIQUE, enabled INTEGER DEFAULT 1, seen REAL DEFAULT 0);
@@ -62,13 +64,78 @@ class Service:
             db.close()
 
     def create_owner(self, email, password):
-        if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) or len(password) < 10:
-            raise ValueError('Usa un correo válido y contraseña de al menos 10 caracteres.')
+        if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) or not 4 <= len(password) <= 200:
+            raise ValueError('Usa un correo válido y contraseña de 4 a 200 caracteres.')
         salt = secrets.token_hex(16)
         with self.db() as db:
             if db.execute('SELECT 1 FROM owner').fetchone():
                 raise ValueError('La cuenta ya está configurada.')
             db.execute('INSERT INTO owner VALUES(?,?,?)', (email.lower(), salt, password_hash(password, salt)))
+
+    def change_password(self, current, new, keep_token):
+        if not isinstance(new,str) or not 4 <= len(new) <= 200:
+            raise ValueError('La contraseña debe tener de 4 a 200 caracteres.')
+        with self.lock, self.db() as db:
+            row = db.execute('SELECT * FROM owner').fetchone()
+            if not row or not hmac.compare_digest(password_hash(current,row['salt']),row['password']):
+                raise PermissionError('La contraseña actual no es correcta.')
+            salt = secrets.token_hex(16)
+            db.execute('UPDATE owner SET salt=?,password=?',(salt,password_hash(new,salt)))
+            db.execute('DELETE FROM sessions WHERE token<>?',(digest(keep_token),))
+
+    def logo(self):
+        with self.db() as db:
+            row = db.execute("SELECT value FROM branding WHERE key='logo'").fetchone()
+            return bytes(row[0]) if row else None
+
+    def set_logo(self, content):
+        from PIL import Image, ImageOps, UnidentifiedImageError
+        if not content or len(content) > 2*1024*1024:
+            raise ValueError('Selecciona una imagen de hasta 2 MB.')
+        try:
+            with Image.open(io.BytesIO(content)) as image:
+                if image.format not in ('PNG','JPEG','WEBP') or image.width*image.height > 8_000_000:
+                    raise ValueError('Usa PNG, JPG o WebP de hasta 8 megapíxeles.')
+                normalized = ImageOps.exif_transpose(image).convert('RGBA')
+                normalized.thumbnail((1024,1024))
+                output = io.BytesIO()
+                normalized.save(output,format='PNG')
+        except (UnidentifiedImageError,OSError,Image.DecompressionBombError) as e:
+            raise ValueError('No se pudo leer la imagen del logo.') from e
+        with self.lock, self.db() as db:
+            db.execute("INSERT INTO branding VALUES('logo',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(output.getvalue(),))
+
+    def reset_logo(self):
+        with self.lock, self.db() as db:
+            db.execute("DELETE FROM branding WHERE key='logo'")
+
+    def icon(self):
+        with self.db() as db:
+            row = db.execute("SELECT value FROM branding WHERE key='icon'").fetchone()
+            return bytes(row[0]) if row else None
+
+    def set_icon(self, content):
+        from PIL import Image, ImageOps, UnidentifiedImageError
+        if not content or len(content)>2*1024*1024:
+            raise ValueError('Selecciona un icono o imagen de hasta 2 MB.')
+        try:
+            with Image.open(io.BytesIO(content)) as image:
+                if image.format not in ('ICO','PNG','JPEG','WEBP') or image.width*image.height>8_000_000:
+                    raise ValueError('Usa ICO, PNG, JPG o WebP de hasta 8 megapíxeles.')
+                image = ImageOps.exif_transpose(image).convert('RGBA')
+                image.thumbnail((256,256))
+                square = Image.new('RGBA',(256,256))
+                square.alpha_composite(image,((256-image.width)//2,(256-image.height)//2))
+                output = io.BytesIO()
+                square.save(output,format='ICO',sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+        except (UnidentifiedImageError,OSError,Image.DecompressionBombError) as e:
+            raise ValueError('No se pudo leer la imagen del icono.') from e
+        with self.lock, self.db() as db:
+            db.execute("INSERT INTO branding VALUES('icon',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(output.getvalue(),))
+
+    def reset_icon(self):
+        with self.lock, self.db() as db:
+            db.execute("DELETE FROM branding WHERE key='icon'")
 
     def owner_email(self):
         with self.db() as db:
@@ -196,7 +263,7 @@ class Service:
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.0'
-    server_version = 'JADPrint/0.1'
+    server_version = 'PRINTER-TAB/0.2'
 
     def setup(self):
         super().setup()
@@ -262,6 +329,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def route(self, method, path):
         s = self.service
+        if method == 'GET' and path == '/branding/logo':
+            logo = s.logo()
+            self.respond(logo if logo else (Path(__file__).parent/'default-logo.svg').read_bytes(),mime='image/png' if logo else 'image/svg+xml')
+            return
         if method == 'GET' and path in ('/', '/admin.js'):
             name = 'admin.html' if path == '/' else 'admin.js'
             self.respond((Path(__file__).parent / name).read_bytes(), mime='text/html' if name.endswith('html') else 'text/javascript')
@@ -287,6 +358,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path.startswith('/api/admin/'):
             if not s.admin(self.token()):
                 raise PermissionError('Inicia sesión como administrador.')
+            if method == 'POST' and path == '/api/admin/logo':
+                s.set_logo(self.read_body(2*1024*1024))
+                self.respond({'ok':True})
+                return
+            if method == 'POST' and path == '/api/admin/logo/reset':
+                self.body_json()
+                s.reset_logo()
+                self.respond({'ok':True})
+                return
+            if method == 'POST' and path == '/api/admin/icon':
+                s.set_icon(self.read_body(2*1024*1024))
+                self.respond({'ok':True})
+                return
+            if method == 'POST' and path == '/api/admin/icon/reset':
+                self.body_json()
+                s.reset_icon()
+                self.respond({'ok':True})
+                return
+            if method == 'POST' and path == '/api/admin/password':
+                b = self.body_json()
+                s.change_password(b['current'],b['password'],self.token())
+                self.respond({'ok':True})
+                return
             if method == 'GET' and path.endswith('/state'):
                 with s.db() as db:
                     self.respond({'email':s.owner_email(),
@@ -324,6 +418,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
         if path.startswith('/api/pc/'):
             pc = s.device(self.token(),'pc')['id']
+            if method == 'GET' and path == '/api/pc/branding':
+                logo,icon = s.logo(),s.icon()
+                self.respond({'logo':base64.b64encode(logo).decode() if logo else None,
+                              'icon':base64.b64encode(icon).decode() if icon else None})
+                return
             if method == 'POST' and path.endswith('/heartbeat'):
                 s.heartbeat(pc,self.body_json()['printers'])
                 self.respond({'ok':True})
@@ -387,19 +486,21 @@ class Server(http.server.ThreadingHTTPServer):
         finally:
             self.slots.release()
 
-def run(home, port=8765):
+def run(home, port=8765, interactive=True):
     s = Service(home)
     if not s.owner_email():
+        if not interactive:
+            raise ValueError('Primero crea la cuenta desde el panel PRINTER-TAB.')
         print('\nCrear cuenta local de administrador (el correo no envía mensajes).')
         email = input('Correo: ').strip()
-        password = getpass.getpass('Contraseña (mínimo 10 caracteres): ')
+        password = getpass.getpass('Contraseña (mínimo 4 caracteres): ')
         if password != getpass.getpass('Repite la contraseña: '):
             raise ValueError('Las contraseñas no coinciden.')
         s.create_owner(email,password)
     server = Server(('0.0.0.0',port),s)
     print(f'\nConsola administrador: http://localhost:{port}')
     print(f'Cuenta: {s.owner_email()}')
-    print('Mantén esta ventana abierta. Autoriza el puerto TCP en la red privada.')
+    print('PRINTER-TAB · Servidor iniciado. Puerto TCP 8765 en la red privada.')
     print('En otras PCs y tablets usa la IP LAN de ESTA PC, no localhost.')
     try:
         ips = sorted({a[4][0] for a in socket.getaddrinfo(socket.gethostname(),None,socket.AF_INET)})
@@ -407,8 +508,9 @@ def run(home, port=8765):
             print(f'  Dirección candidata: http://{ip}:{port}')
     except OSError:
         pass
-    import webbrowser
-    webbrowser.open(f'http://localhost:{port}')
+    if interactive:
+        import webbrowser
+        webbrowser.open(f'http://localhost:{port}')
     server.serve_forever()
 
 if __name__ == '__main__':

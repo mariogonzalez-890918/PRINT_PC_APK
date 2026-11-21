@@ -1,4 +1,4 @@
-JAD Print 0.1.0 - third-party components
+PRINTER-TAB 0.2.0 - third-party components
 
 Python 3.13.9 (embedded Windows runtime)
 Copyright Python Software Foundation and contributors.
