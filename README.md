@@ -1,10 +1,10 @@
-# PRINTER-TAB · versión inicial 0.2.0
+# PRINTER-TAB · versión inicial 0.2.1
 
 Sistema de impresión para Windows y tablets Android: una cuenta administradora identificada por correo, varias PCs con impresoras instaladas y permisos por tablet. Proyecto independiente alojado en https://github.com/mariogonzalez-890918/PRINT_PC_APK.
 
 ## Archivos para instalar
 
-- `dist/PRINTER-TAB-Instalador-0.2.0.exe`: instalador Windows x64 por usuario; incluye Python y el motor PDF, no necesitas instalar Python.
+- `dist/PRINTER-TAB-Instalador-0.2.1.exe`: instalador Windows x64 por usuario; incluye Python y el motor PDF, no necesitas instalar Python.
 - `dist/PRINTER-TAB-Android-0.2.0.apk`: APK firmada para Android 8 o posterior; instalación directa, fuera de Play Store.
 
 El instalador Windows aún no tiene certificado de firma de editor. La firma Android permite instalar y actualizar con la misma clave local; no representa publicación o certificación de Google Play.
@@ -30,13 +30,19 @@ El correo identifica **una cuenta local**, sin correo de verificación, recupera
    ```
 
    Este proyecto no ha modificado tu firewall ni tu router. No abras el puerto al Internet público. Para otra sede usa una VPN o un despliegue HTTPS administrado.
-6. En la consola pulsa **Vincular PC**. En cada PC abre **PRINTER-TAB → Vincular esta PC**, introduce dirección del servidor, correo de la cuenta, código y nombre (PC1, PC2, Caja...). Pulsa **Iniciar impresión** después de vincular. El código vence en 15 minutos y se utiliza una vez. Usa nombres diferentes para distinguir las PCs.
+6. En el panel de cada PC pulsa **Compartir impresoras**, inicia sesión con la cuenta administradora del servidor y publica las impresoras detectadas de Windows. En la PC servidor se vincula el agente automáticamente, sin generar un código para sí misma. La impresión se inicia al publicar. Para vincular por código sigue disponible **Vincular por código**.
 7. Instala la APK en cada tablet habilitando la instalación desde la fuente que utilices. En la consola genera **Vincular tablet**. En la APK introduce dirección, correo, nombre y código.
-8. En **Tablets y permisos**, marca las impresoras permitidas para cada tablet y pulsa **Guardar permisos**. Por defecto no tiene ninguna. Se pueden asignar impresoras de varias PCs a la misma tablet.
+8. En el panel Windows pulsa **Asignar impresoras a tablets**. Inicia sesión, selecciona una tablet en la lista, marca sus impresoras permitidas y pulsa **Guardar asignación**. Repite para cada tablet. Se admiten impresoras de varias PCs por tablet. El botón **Vincular tablet** genera un código; después de vincularla pulsa **Actualizar equipos**. También puedes asignar desde la consola web. Por defecto una tablet nueva no tiene permisos.
 9. En la APK actualiza impresoras, elige PC e impresora, archivo y opciones. Confirma **Imprimir**. También puedes usar **Compartir → PRINTER-TAB** desde una aplicación que comparta un PDF, JPG o PNG.
 10. Consulta el historial en la APK o la consola. El botón **Actualizar** renueva el estado. Los botones **Detener servidor** y **Detener impresión** detienen cada componente; la X minimiza a la bandeja. El instalador ofrece iniciar el agente al entrar a Windows como opción, desactivada de inicio.
 
-## Actualizar desde 0.1.0
+## Cambios 0.2.1: asignación desde el EXE
+
+El panel incluye **Compartir impresoras** y **Asignar impresoras a tablets**. Iniciar el servidor por sí solo no publica las impresoras: usa Compartir impresoras en cada PC. La selección por tablet se guarda en el servidor y se respeta al imprimir. En la APK pulsa **Actualizar impresoras** después de cambiar permisos.
+
+El instalador Windows se actualiza a 0.2.1; la APK sigue en 0.2.0 y no es necesario reinstalarla para esta corrección.
+
+## Actualizar desde 0.1.0 o 0.2.0
 
 Cierra la versión anterior y ejecuta el nuevo EXE. Se conserva el identificador del instalador y la carpeta de datos `%LOCALAPPDATA%\JADPrint`; no se cambian automáticamente la cuenta, las contraseñas ni las vinculaciones. Los accesos directos nuevos se llaman PRINTER-TAB. El nuevo EXE es una aplicación gráfica de Windows con icono incorporado, panel y bandeja.
 
@@ -93,7 +99,7 @@ Los archivos se borran del servidor al recibir un resultado terminal del agente;
 
 ## Compilación y pruebas
 
-Fuentes del servidor y agente en `pc/`; Android nativo Java en `android/`. `tools/prepare_build.py` descarga dependencias oficiales en `.build/`. `tools/build.ps1` compila la APK con SDK 35 y JDK 21 y genera el instalador con Inno Setup 6. Las rutas de JDK e Inno deben ajustarse si la máquina de compilación usa otras ubicaciones. Instala Pillow 12.0.0 en el Python embebido antes de compilar. El icono se puede regenerar con `tools/make_icon.py`. Los detalles de licencias y fuentes están en `THIRD-PARTY-NOTICES.txt`.
+Fuentes del servidor y agente en `pc/`; Android nativo Java en `android/`. `tools/prepare_build.py` descarga dependencias oficiales en `.build/`. `tools/build.ps1 -WindowsOnly` recompila solo el instalador Windows; sin ese argumento compila también la APK. `tools/build.ps1` compila la APK con SDK 35 y JDK 21 y genera el instalador con Inno Setup 6. Las rutas de JDK e Inno deben ajustarse si la máquina de compilación usa otras ubicaciones. Instala Pillow 12.0.0 en el Python embebido antes de compilar. El icono se puede regenerar con `tools/make_icon.py`. Los detalles de licencias y fuentes están en `THIRD-PARTY-NOTICES.txt`.
 
 La clave de firma Android se guarda fuera del proyecto en `%LOCALAPPDATA%\JADPrint\signing`; consérvala para publicar actualizaciones sobre esta APK. No se incluye en los entregables.
 

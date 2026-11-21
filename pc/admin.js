@@ -11,6 +11,7 @@ function safely(fn){return async()=>{try{await fn();}catch(e){message(e.message)
 function toggleDevice(d){const b=el('button',d.enabled?'Desactivar':'Reactivar','secondary');b.onclick=safely(async()=>{await api('admin/device',{id:d.id,enabled:!d.enabled});await refresh();});return b;}
 async function refresh(){
  const data=await api('admin/state');$('login').hidden=true;$('dashboard').hidden=false;$('account').textContent=data.email;
+ $('printerStatus').textContent=data.printers.length?data.printers.length+' impresora(s) publicadas. Ya puedes asignarlas por tablet.':'No hay impresoras publicadas. En la PC con impresoras abre PRINTER-TAB y pulsa Compartir impresoras; iniciar solo el servidor no publica impresoras.';
  const devices=new Map(data.devices.map(d=>[d.id,d]));
  $('pcs').replaceChildren();$('tablets').replaceChildren();$('jobs').replaceChildren();
  for(const d of data.devices){
@@ -19,12 +20,12 @@ async function refresh(){
    const online=d.enabled&&Date.now()/1000-d.seen<45;
    card.append(el('span',!d.enabled?'Desactivada':online?'Conectada':'Sin conexión','badge'));
    const list=el('ul');for(const p of data.printers.filter(p=>p.pc===d.id))list.append(el('li',p.name+(p.available?'':' · no disponible')));
-   card.append(list,toggleDevice(d));if(!list.children.length)card.append(el('p','Inicia el agente de impresión en esta PC.','muted'));$('pcs').append(card);
+   card.append(list,toggleDevice(d));if(!list.children.length)card.append(el('p','En esta PC abre PRINTER-TAB y pulsa Compartir impresoras.','muted'));$('pcs').append(card);
   }else{
    card.append(el('span',d.enabled?'Vinculada':'Desactivada','badge'));
    for(const p of data.printers){const label=el('label',undefined,'check');const cb=el('input');cb.type='checkbox';cb.value=p.id;cb.checked=data.grants.some(g=>g.tablet===d.id&&g.printer===p.id);label.append(cb,document.createTextNode((devices.get(p.pc)?.name||'PC')+' · '+p.name));card.append(label);}
-   if(!data.printers.length)card.append(el('p','Vincula e inicia una PC para ver sus impresoras.','muted'));
-   const save=el('button','Guardar permisos');save.onclick=safely(async()=>{await api('admin/grants',{tablet:d.id,printers:[...card.querySelectorAll('input:checked')].map(c=>c.value)});message('Permisos guardados para '+d.name+'.');});card.append(save,toggleDevice(d));$('tablets').append(card);
+   if(!data.printers.length)card.append(el('p','En la PC con impresoras pulsa Compartir impresoras; luego vuelve y pulsa Actualizar.','muted'));
+   const save=el('button','Guardar asignación');save.onclick=safely(async()=>{await api('admin/grants',{tablet:d.id,printers:[...card.querySelectorAll('input:checked')].map(c=>c.value)});message('Asignación guardada para '+d.name+'.');});card.append(save,toggleDevice(d));$('tablets').append(card);
   }
  }
  if(!$('pcs').children.length)$('pcs').append(el('p','Todavía no hay PCs. Genera un código y vincula el programa instalado en cada computadora.','muted'));
@@ -59,3 +60,6 @@ $('saveIcon').onclick=safely(async()=>{
  $('iconFile').value='';message('Icono guardado. Vuelve al panel de Windows para aplicarlo a la ventana, bandeja y accesos directos.');
 });
 $('resetIcon').onclick=safely(async()=>{await api('admin/icon/reset',{});message('Icono original restaurado. Vuelve al panel de Windows para aplicarlo.');});
+
+if(location.hash==='#branding')$('branding').open=true;
+window.addEventListener('hashchange',()=>{if(location.hash==='#branding')$('branding').open=true;});

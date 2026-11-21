@@ -1,10 +1,11 @@
-﻿$ErrorActionPreference = 'Stop'
+﻿param([switch]$WindowsOnly)
+$ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $cacheRoot = Join-Path $projectRoot '.build'
 $jdkRoot = 'C:\Program Files\Android\openjdk\jdk-21.0.8'
 $buildTools = Join-Path $cacheRoot 'android-tools\android-15'
 $androidJar = Join-Path $cacheRoot 'android-platform\android-35\android.jar'
-if (!(Test-Path -LiteralPath $androidJar)) {
+if (!$WindowsOnly -and !(Test-Path -LiteralPath $androidJar)) {
     $androidJar = (Get-ChildItem -LiteralPath (Join-Path $cacheRoot 'android-platform') -Filter android.jar -Recurse | Select-Object -First 1).FullName
 }
 $env:JAVA_HOME = $jdkRoot
@@ -16,6 +17,7 @@ function Run-Checked([string]$program,[string[]]$arguments) {
 $distRoot = Join-Path $projectRoot 'dist'
 $androidBuild = Join-Path $cacheRoot 'apk'
 New-Item -ItemType Directory -Force -Path $distRoot,$androidBuild,(Join-Path $androidBuild 'classes'),(Join-Path $androidBuild 'dex') | Out-Null
+if (!$WindowsOnly) {
 Run-Checked "$buildTools\aapt2.exe" @('compile','--dir',"$projectRoot\android\res",'-o',"$androidBuild\resources.zip")
 Run-Checked "$buildTools\aapt2.exe" @('link','-o',"$androidBuild\unsigned.apk",'-I',$androidJar,'--manifest',"$projectRoot\android\AndroidManifest.xml",'--version-code','2','--version-name','0.2.0',"$androidBuild\resources.zip")
 Run-Checked "$jdkRoot\bin\javac.exe" @('-encoding','UTF-8','--release','8','-classpath',$androidJar,'-d',"$androidBuild\classes","$projectRoot\android\src\com\jad\print\MainActivity.java")
@@ -38,6 +40,8 @@ Run-Checked "$buildTools\apksigner.bat" @('sign','--ks',$keyFile,'--ks-key-alias
 Run-Checked "$buildTools\apksigner.bat" @('verify','--verbose',"$distRoot\PRINTER-TAB-Android-0.2.0.apk")
 Run-Checked "$buildTools\aapt2.exe" @('dump','badging',"$distRoot\PRINTER-TAB-Android-0.2.0.apk")
 
+}
+
 $packageRoot = Join-Path $cacheRoot 'package'
 New-Item -ItemType Directory -Force -Path $packageRoot,(Join-Path $packageRoot 'runtime'),(Join-Path $packageRoot 'pc'),(Join-Path $packageRoot 'engine') | Out-Null
 Copy-Item -Path "$cacheRoot\python\*" -Destination "$packageRoot\runtime" -Recurse -Force
@@ -50,4 +54,4 @@ Copy-Item -LiteralPath $sumatraExe.FullName -Destination "$packageRoot\engine\Su
 Copy-Item -LiteralPath "$cacheRoot\sumatra\COPYING" -Destination "$packageRoot\engine\COPYING" -Force
 Run-Checked 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' @('/nologo','/target:winexe','/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.Web.Extensions.dll',"/win32icon:$projectRoot\pc\app.ico","/out:$packageRoot\PRINTER-TAB.exe","$projectRoot\tools\Launcher.cs")
 Run-Checked "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" @('/Q',"$projectRoot\tools\installer.iss")
-Get-FileHash -Algorithm SHA256 -LiteralPath "$distRoot\PRINTER-TAB-Android-0.2.0.apk","$distRoot\PRINTER-TAB-Instalador-0.2.0.exe" | Format-List
+Get-FileHash -Algorithm SHA256 -LiteralPath "$distRoot\PRINTER-TAB-Android-0.2.0.apk","$distRoot\PRINTER-TAB-Instalador-0.2.1.exe" | Format-List

@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='printer-tab-upgrade-') as profile:
         subprocess.run([runtime,'-c',setup],check=True,env=env,timeout=30)
         database=Path(profile)/'JADPrint'/'hub'/'hub.sqlite3'
         original=hashlib.sha256(database.read_bytes()).hexdigest()
-        subprocess.run([str(root/'dist'/'PRINTER-TAB-Instalador-0.2.0.exe')]+flags,check=True,timeout=120)
+        subprocess.run([str(root/'dist'/'PRINTER-TAB-Instalador-0.2.1.exe')]+flags,check=True,timeout=120)
         if hashlib.sha256(database.read_bytes()).hexdigest()!=original:
             raise RuntimeError('El instalador modificó los datos de la cuenta.')
         if not (target/'PRINTER-TAB.exe').is_file() or (target/'JADPrint.exe').exists():
@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='printer-tab-upgrade-') as profile:
         data=json.loads(result.stdout)
         if not data['hub_configured'] or data['email']!='upgrade@example.test':
             raise RuntimeError('No se conservó la cuenta tras actualizar.')
-        print('ACTUALIZACION 0.1.0 -> 0.2.0 Y CUENTA CONSERVADA: OK',flush=True)
+        print('ACTUALIZACION 0.1.0 -> 0.2.1 Y CUENTA CONSERVADA: OK',flush=True)
     finally:
         if installed:
             subprocess.run([str(target/'unins000.exe'),'/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'],check=True,timeout=90)

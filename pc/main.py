@@ -8,11 +8,49 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 
 def main():
     parser = argparse.ArgumentParser(description='PRINTER-TAB · Consola y agente de impresión')
-    parser.add_argument('mode',nargs='?',choices=['hub','agent','status','configure-hub','configure-agent'])
+    parser.add_argument('mode',nargs='?',choices=['hub','agent','status','configure-hub','configure-agent','admin-login','admin-state','admin-grants','admin-code','publish-printers'])
     parser.add_argument('--headless',action='store_true')
     args = parser.parse_args()
     mode = args.mode
     home = Path(os.environ.get('LOCALAPPDATA','.')) / 'JADPrint'
+    if mode in ('admin-login','admin-state','admin-grants','admin-code','publish-printers'):
+        from agent import api,atomic_json,printers
+        from urllib.parse import urlsplit
+        data=json.loads(sys.stdin.readline())
+        url=data['url'].strip().rstrip('/')
+        parsed=urlsplit(url)
+        if parsed.scheme not in ('http','https') or not parsed.hostname or parsed.path or parsed.query or parsed.fragment or parsed.username:
+            raise ValueError('Dirección del servidor inválida.')
+        config={'url':url,'token':data.get('token','')}
+        if mode=='admin-login':
+            session=api(config,'login',{'email':data['email'],'password':data['password']})
+            config['token']=session['token']
+            print(json.dumps({'token':session['token'],'state':api(config,'admin/state')}))
+        elif mode=='admin-state':
+            print(json.dumps(api(config,'admin/state')))
+        elif mode=='admin-grants':
+            print(json.dumps(api(config,'admin/grants',{'tablet':data['tablet'],'printers':data['printers']})))
+        elif mode=='admin-code':
+            print(json.dumps(api(config,'admin/code',{'role':'tablet'})))
+        else:
+            # Verify the administrator session before reading/publishing any device data.
+            api(config,'admin/state')
+            names=printers()
+            if not names:
+                raise ValueError('Windows no reportó impresoras instaladas. Instala el controlador y vuelve a intentarlo.')
+            path=home/'agent'/'agent.json'
+            if path.exists():
+                device=json.loads(path.read_text(encoding='utf-8'))
+                if device['url'].rstrip('/')!=url:
+                    raise ValueError('Esta PC ya está vinculada a otro servidor. Usa la cuenta y dirección de ese servidor.')
+            else:
+                device={'url':url}
+                device.update(api(config,'admin/register-pc',{'name':data['name'],'printers':names}))
+                path.parent.mkdir(parents=True,exist_ok=True)
+                atomic_json(path,device)
+            api(device,'pc/heartbeat',{'printers':names})
+            print(json.dumps({'printers':names,'id':device['id']}))
+        return
     if mode == 'status':
         from hub import Service
         result = {'hub_configured':False,'agent_configured':(home/'agent'/'agent.json').exists(),'url':'http://localhost:8765'}

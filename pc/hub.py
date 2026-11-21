@@ -189,6 +189,18 @@ class Service:
                 db.execute('INSERT INTO printers VALUES(?,?,?,1) ON CONFLICT(id) DO UPDATE SET available=1',
                            (pid, pc, name))
 
+    def register_pc(self, name, printers):
+        if not isinstance(name,str) or not name.strip() or len(name)>80:
+            raise ValueError('Escribe un nombre de PC de hasta 80 caracteres.')
+        if not isinstance(printers,list) or len(printers)>200 or any(not isinstance(p,str) or not p or len(p)>256 for p in printers):
+            raise ValueError('Lista de impresoras inválida.')
+        device_id,token=str(uuid.uuid4()),secrets.token_urlsafe(32)
+        with self.lock, self.db() as db:
+            db.execute("INSERT INTO devices(id,name,role,token,seen) VALUES(?,?,'pc',?,?)",(device_id,name.strip(),digest(token),time.time()))
+            for printer in set(printers):
+                db.execute('INSERT INTO printers VALUES(?,?,?,1)',(digest(device_id+'\0'+printer)[:32],device_id,printer))
+        return {'id':device_id,'token':token,'email':self.owner_email()}
+
     def enqueue(self, tablet, job_id, options, content, mime):
         if str(uuid.UUID(job_id)) != job_id:
             raise ValueError('Identificador inválido.')
@@ -358,6 +370,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path.startswith('/api/admin/'):
             if not s.admin(self.token()):
                 raise PermissionError('Inicia sesión como administrador.')
+            if method == 'POST' and path == '/api/admin/register-pc':
+                b=self.body_json()
+                self.respond(s.register_pc(b['name'],b['printers']),201)
+                return
             if method == 'POST' and path == '/api/admin/logo':
                 s.set_logo(self.read_body(2*1024*1024))
                 self.respond({'ok':True})
