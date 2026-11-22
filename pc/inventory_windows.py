@@ -207,4 +207,11 @@ def normalize_windows(raw):
     components.append({'category':'Identificación','data':identity})
     for category,items in [('cpu',rows(raw,'cpu')),('ram',memory),('disks',disks),('physical_disks',physical),('boards',rows(raw,'boards')),('graphics',rows(raw,'graphics')),('Antivirus',av),('Office',office)]:
         for item in items:components.append({'category':category,'data':item})
-    return {'platform':'Windows','summary':summary,'components':components,'errors':raw.get('errors',[]),'collected_at':datetime.now(timezone.utc).isoformat()}
+    reasons={}
+    for name,value in summary.items():
+        if value in (None,'',UNAVAILABLE):reasons[name]='Windows o el fabricante no reportó este dato; revisa los errores de consulta.'
+    if not service_tag:reasons['service_tag']='Este fabricante no identifica la serie como Service Tag; consulta Número de serie.' if serial else 'El firmware no reportó un número de serie válido.'
+    if summary['disk_formats']==UNAVAILABLE:reasons['disk_formats']='Windows no confirma el formato físico M.2. NVMe identifica la conexión, no el formato.'
+    if not office:reasons['office_type']=reasons['office_version']=office_status
+    if not av:reasons['antivirus']=reasons['antivirus_status']=av_status
+    return {'platform':'Windows','schema_version':2,'collector_version':'0.4.1','field_status':reasons,'summary':summary,'components':components,'errors':raw.get('errors',[]),'collected_at':datetime.now(timezone.utc).isoformat()}

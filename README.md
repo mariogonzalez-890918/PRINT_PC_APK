@@ -1,4 +1,4 @@
-# PRINTER-TAB 0.4.0
+# PRINTER-TAB 0.4.1
 
 Aplicaciones gestionadas, desarrolladas y administradas por **Área de TI GMP · [sistemas@grupomipan.com](mailto:sistemas@grupomipan.com)**.
 
@@ -8,8 +8,8 @@ Servidor central de administración, agentes Windows y APK Android. El correo id
 
 Los archivos están en [Releases](https://github.com/mariogonzalez-890918/PRINT_PC_APK/releases):
 
-- **PRINTER-TAB-Instalador-0.4.0.exe**: Windows x64. Incluye Python, las librerías, panel gráfico, icono y motor de impresión. No requiere instalar Python o Docker por separado. Se instala en las PCs cliente y, si se utiliza una PC Windows como servidor, en ella también.
-- **PRINTER-TAB-Android-0.4.0.apk**: Android 8 o posterior para tablets y celulares. Se instala encima de la APK anterior con la misma firma y el paquete `com.jad.print` para conservar la vinculación.
+- **PRINTER-TAB-Instalador-0.4.1.exe**: Windows x64. Incluye Python, las librerías, panel gráfico, icono y motor de impresión. No requiere instalar Python o Docker por separado. Se instala en las PCs cliente y, si se utiliza una PC Windows como servidor, en ella también.
+- **PRINTER-TAB-Android-0.4.1.apk**: Android 8 o posterior para tablets y celulares. Se instala encima de la APK anterior con la misma firma y el paquete `com.jad.print` para conservar la vinculación.
 
 El instalador Windows todavía no tiene certificado de firma de editor. La APK está firmada para instalación directa, fuera de Play Store. La versión es inicial y requiere validar la impresión física en los modelos concretos de impresora.
 
@@ -25,7 +25,22 @@ Funciona con una dirección del servidor que sea accesible desde los equipos:
 
 El código de registro incluye la dirección de conexión configurada por el administrador. No es una redirección por correo ni atraviesa por sí solo NAT, firewalls o redes aisladas. El alojamiento público no viene contratado ni activado en esta entrega.
 
-## Preparar la cuenta y registrar los equipos
+## Cambiar de servidor, respaldo y restablecimiento
+
+El EXE incluye **Cambiar servidor / restablecer** y **Respaldo / restaurar / limpiar**. Estas operaciones son locales al perfil de Windows y requieren confirmar; instalar una actualización no limpia nada automáticamente.
+
+Para trasladar la cuenta a otro servidor:
+
+1. Revisa los trabajos pendientes y las colas Windows. En el equipo anterior abre **Respaldo / restaurar / limpiar**, elige `EXPORTAR` y guarda un ZIP nuevo. Se detienen los servicios iniciados por ese panel. También puedes descargarlo como administrador con **Descargar respaldo del servidor** en la consola.
+2. Copia el ZIP a una memoria USB o al servidor nuevo. Contiene la cuenta (incluida contraseña cifrada mediante hash), inventarios, configuración e historial. No incluye PDFs pendientes ni credenciales del agente cliente ni la clave de firma de Android. Conserva el archivo en un lugar protegido.
+3. Instala el EXE en el servidor nuevo. Sin crear otra cuenta, abre **Respaldo / restaurar / limpiar**, elige `RESTAURAR`, escribe `RESTAURAR` en confirmación y selecciona el ZIP. Requiere configuración local vacía. Para dejarla vacía, **Cambiar servidor / restablecer → Todo** con confirmación `RESTABLECER` guarda primero un respaldo local de los datos anteriores.
+4. Inicia el servidor y abre Administración con el correo y la contraseña restaurados. En **Servicio central y registro** guarda `http://IP-VPN-DEL-SERVIDOR:8765` usando la dirección de ZeroTier o Radmin del equipo nuevo. Todos los clientes deben poder alcanzar esa dirección y el puerto TCP 8765. `localhost` puede usarse en el propio servidor, pero no para vincular otros equipos.
+5. La restauración deja desactivados los equipos anteriores, retira permisos y códigos/sesiones anteriores, conserva inventarios y detiene trabajos que estaban pendientes. Genera códigos nuevos para cada PC/móvil y asigna sus impresoras otra vez. En PCs cliente usa **Cambiar servidor / restablecer → Solo cliente**, luego **Unir con código**, **Compartir impresoras** e **Iniciar impresión**. En Android desvincula y registra con un código nuevo; revisa primero sus trabajos pendientes.
+6. Cuando hayas comprobado el respaldo, en el origen elige `LIMPIAR`, confirma `BORRAR ORIGEN` y selecciona el ZIP externo. La aplicación verifica que el respaldo corresponde a la cuenta y que sus tablas coinciden con el estado actual antes de eliminar cuenta, inventarios, configuración de cliente, documentos pendientes y personalización activos de ese perfil. Si hubo cambios posteriores, exporta un respaldo nuevo con los servicios detenidos. No se eliminan impresoras/controladores Windows, archivos ZIP ya exportados, respaldos locales previos, datos de otros perfiles ni trabajos ya entregados a Windows. La operación no realiza borrado forense del disco.
+
+Si prefieres empezar sin conservar la cuenta anterior, usa **Cambiar servidor / restablecer → Todo** y crea una cuenta nueva en el equipo servidor. Se conserva un respaldo local en `%LOCALAPPDATA%\PRINTER-TAB-Respaldos`. El restablecimiento solo cliente conserva el servidor local; el restablecimiento total también retira su cuenta y base de datos activas. La clave de firma de Android, si existe en un equipo de desarrollo, se conserva siempre.
+
+## Registrar los equipos
 
 1. En la PC que será servidor abre el acceso directo **PRINTER-TAB**, pulsa **Crear servidor (TI)** y crea la cuenta por correo. Contraseña de 4 a 200 caracteres. No hay credenciales predeterminadas.
 2. Mantén el panel abierto e inicia el servidor. La X minimiza a la bandeja; **Salir** detiene los componentes iniciados desde ese panel.
@@ -38,7 +53,7 @@ El código de registro incluye la dirección de conexión configurada por el adm
 
 ## Imprimir una página desde la tablet o celular Android
 
-1. Actualiza el servidor/PCs y la APK a 0.4.0. Conserva la instalación anterior: no desinstales la APK si quieres mantener la vinculación.
+1. Actualiza el servidor/PCs y la APK a 0.4.1. Conserva la instalación anterior: no desinstales la APK si quieres mantener la vinculación.
 2. Vincula el móvil con correo y código si aún no lo está. El administrador debe asignarle las impresoras.
 3. En PRINTER-TAB pulsa **Activar impresión de Android**. En los ajustes del sistema activa el servicio **PRINTER-TAB**. Android requiere esta autorización manual una sola vez; la APK no puede habilitarse sola.
 4. En Chrome abre la página y utiliza **menú → Compartir → Imprimir** (en algunas apps aparece directamente **Imprimir**). En el selector pulsa **Todas las impresoras** y elige **PC · impresora**. Selecciona páginas, copias, A4/Carta y color/monocromo y confirma en Android.
@@ -57,6 +72,7 @@ No es necesario dar la contraseña administradora a cada cliente: se unen con co
 En **Inventario / Excel** del EXE o en **Auditoría de equipos** de la consola:
 
 - **Solicitar auditoría** envía una solicitud al equipo registrado. Una PC la atiende con su agente activo; un móvil la atiende cuando la APK está abierta, conectada y desocupada.
+- Al iniciar el agente actualizado, envía automáticamente una auditoría ampliada si todavía no había enviado ese esquema de inventario. Los reportes anteriores se identifican en la consola; **Ver componentes / diagnóstico** y Excel explican datos no reportados, errores y versión del recopilador. Actualizar solo el servidor no actualiza el agente instalado en otras PCs.
 - Windows consulta mediante instrucciones fijas y de solo lectura: fabricante/modelo, sistema, CPU, RAM, discos, placa base y gráficos. Añade número de serie, Service Tag cuando el fabricante lo identifica así, Asset Tag, DDR/DDR4/DDR5 y otros tipos de RAM reportados por SMBIOS, SSD/mecánico, conexión SATA/NVMe y formato M.2 cuando el modelo lo confirma. NVMe no se etiqueta automáticamente como M.2; si Windows no lo informa, se muestra **No disponible**.
 - Antivirus: productos registrados en Seguridad de Windows y estado reportado de Microsoft Defender cuando es consultable. Tener un producto registrado no certifica que su protección esté activa. Office: edición/producto y versión instalada de Click-to-Run o MSI, sin abrir Office, consultar claves de licencia ni ejecutar `Win32_Product`. No se confunde una versión interna 16.0 con la edición Office 2016.
 - Android reporta fabricante/modelo, sistema, CPU/ABI, procesadores, RAM, almacenamiento interno y pantalla. Las restricciones de Android limitan el acceso a números de serie y otros detalles de hardware. No se piden permisos adicionales para acceder a esos identificadores.
@@ -77,7 +93,7 @@ Para tickets o etiquetas configura el rollo/tamaño en el controlador de Windows
 
 Desde **Logo / icono / contraseña** puedes cambiar/restaurar logo e icono de Windows y cambiar contraseña. PNG/JPG/WebP hasta 2 MB; el icono también admite ICO. El icono personalizado se aplica al panel, bandeja y accesos directos existentes; el del instalador/EXE en Explorador y el de Android son los incorporados en la compilación.
 
-Cierra la versión anterior con **Salir** antes de actualizar el EXE. Datos Windows: `%LOCALAPPDATA%\JADPrint`. Se conserva esa ruta para mantener cuentas, colas, permisos y vinculaciones de versiones anteriores. Los códigos antiguos simples siguen siendo compatibles en los clientes que ya conservan una dirección; para nuevas instalaciones genera códigos PT3 con el servidor 0.4.0.
+Cierra la versión anterior con **Salir** antes de actualizar el EXE. Datos Windows: `%LOCALAPPDATA%\JADPrint`. Se conserva esa ruta para mantener cuentas, colas, permisos y vinculaciones de versiones anteriores. Los códigos antiguos simples siguen siendo compatibles en los clientes que ya conservan una dirección; para nuevas instalaciones genera códigos PT3 con el servidor 0.4.1.
 
 ## Alojamiento opcional del servidor
 

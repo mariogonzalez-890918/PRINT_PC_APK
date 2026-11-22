@@ -439,10 +439,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def route(self, method, path):
         s = self.service
         if method=='POST' and path in ('/api/login','/api/enroll') and not self.server.auth_allowed(self.client_address[0]):
+            # Consume a bounded auth body before closing. Unread request bytes can
+            # make Windows reset the connection before the client receives HTTP 429.
+            try:length=int(self.headers.get('Content-Length','0'))
+            except ValueError:length=0
+            if 0<length<=16*1024 and not self.headers.get('Transfer-Encoding'):
+                self.read_body(16*1024)
             self.respond({'error':'Demasiados intentos incorrectos. Espera un minuto antes de volver a intentar.'},429)
             return
         if method=='GET' and path=='/api/health':
-            self.respond({'service':'PRINTER-TAB','version':'0.4.0','ready':bool(s.owner_email())})
+            self.respond({'service':'PRINTER-TAB','version':'0.4.1','ready':bool(s.owner_email())})
+            return
+        if method=='GET' and path=='/api/admin/backup.zip':
+            if not s.admin(self.token()):raise PermissionError('Se requiere sesión administradora.')
+            from backup_config import server_backup
+            with s.lock:content=server_backup(s.home)
+            self.respond(content,mime='application/zip')
             return
         if method == 'GET' and path == '/branding/logo':
             logo = s.logo()

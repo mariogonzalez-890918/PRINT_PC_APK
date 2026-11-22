@@ -8,11 +8,23 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 
 def main():
     parser = argparse.ArgumentParser(description='PRINTER-TAB · Consola y agente de impresión')
-    parser.add_argument('mode',nargs='?',choices=['hub','agent','status','configure-hub','configure-agent','admin-login','admin-state','admin-grants','admin-code','publish-printers','client-state','client-send','publish-client'])
+    parser.add_argument('mode',nargs='?',choices=['hub','agent','status','configure-hub','configure-agent','admin-login','admin-state','admin-grants','admin-code','publish-printers','client-state','client-send','publish-client','reset-local','export-backup','restore-backup','clear-origin'])
     parser.add_argument('--headless',action='store_true')
     args = parser.parse_args()
     mode = args.mode
     home = Path(os.environ.get('LOCALAPPDATA','.')) / 'JADPrint'
+    if mode in ('export-backup','restore-backup','clear-origin'):
+        from backup_config import export_file,restore_file,clear_origin
+        data=json.loads(sys.stdin.readline())
+        if mode=='export-backup':result=export_file(home,data['path'])
+        elif mode=='restore-backup':result=restore_file(home,data['path'],data.get('confirmation'))
+        else:result=clear_origin(home,data['path'],data.get('confirmation'))
+        print(json.dumps(result));return
+    if mode=='reset-local':
+        from reset_config import reset_local
+        data=json.loads(sys.stdin.readline())
+        print(json.dumps(reset_local(home,data.get('scope'),data.get('confirmation'))))
+        return
     if mode in ('client-state','client-send','publish-client'):
         from agent import api,printers
         path=home/'agent'/'agent.json'

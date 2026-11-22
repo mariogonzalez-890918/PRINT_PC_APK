@@ -65,4 +65,10 @@ class WindowsInventoryTest(unittest.TestCase):
         self.assertEqual('=BAD()',sheet.cell(2,serial).value);self.assertEqual('s',sheet.cell(2,serial).data_type)
         self.assertEqual('No disponible',sheet.cell(3,serial).value)
 
+    def test_missing_values_explain_source_and_report_identifies_collector(self):
+        report=normalize_windows({'computer':[{'Manufacturer':'Other'}],'bios':[{'SerialNumber':'DEMO'}]})
+        self.assertEqual(2,report['schema_version'])
+        self.assertIn('Número de serie',report['field_status']['service_tag'])
+        self.assertIn('NVMe',report['field_status']['disk_formats'])
+
 if __name__=='__main__':unittest.main()

@@ -162,6 +162,12 @@ class CentralTest(unittest.TestCase):
         for address in ['http://user:secret@host','https://host/path','https://host?token=bad']:
             with self.assertRaises(ValueError):normalize_url(address)
 
+    def test_backup_download_is_admin_only_and_snapshot_is_valid(self):
+        from backup_config import read_backup
+        data=self.req('admin/backup.zip',binary=True)
+        self.assertTrue(read_backup(data).startswith(b'SQLite format 3'))
+        with self.assertRaises(urllib.error.HTTPError):self.req('admin/backup.zip',token=self.mobile['token'],binary=True)
+
     def test_cloud_start_requires_explicit_account_and_does_not_replace_existing(self):
         import central_server
         with tempfile.TemporaryDirectory() as folder:

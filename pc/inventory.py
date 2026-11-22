@@ -44,6 +44,10 @@ def export_xlsx(devices):
             if not isinstance(values,dict):continue
             for key,value in values.items():append(detail,[device['name'],component.get('category',''),key,value])
         for error in inventory.get('errors',[]):append(detail,[device['name'],'Dato no disponible','Detalle',error])
+        if inventory.get('platform')=='Windows' and inventory.get('schema_version',0)<2:
+            append(detail,[device['name'],'Diagnóstico','Reporte anterior','Actualizar el EXE e iniciar impresión para recibir automáticamente la auditoría ampliada.'])
+        for key,value in inventory.get('field_status',{}).items():append(detail,[device['name'],'Diagnóstico',key,value])
+        if inventory.get('collector_version'):append(detail,[device['name'],'Diagnóstico','Versión del agente',inventory['collector_version']])
     for sheet in workbook:
         sheet.freeze_panes='A2';sheet.auto_filter.ref=sheet.dimensions
         for cell in sheet[1]:cell.fill=PatternFill('solid',fgColor='123458');cell.font=Font(color='FFFFFF',bold=True)

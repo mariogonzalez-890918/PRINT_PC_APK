@@ -109,6 +109,10 @@ def run(home, interactive=True):
     audit_pool=ThreadPoolExecutor(max_workers=1)
     audit_future=None
     audit_request=None
+    audit_schema=home/'inventory-schema.json'
+    try:auto_audit_needed=json.loads(audit_schema.read_text(encoding='utf-8')).get('schema',0)<2
+    except (OSError,ValueError):auto_audit_needed=True
+    next_auto_audit=0
     while True:
         try:
             if marker.exists():
@@ -119,15 +123,18 @@ def run(home, interactive=True):
                 names = printers()
                 response=api(config,'pc/heartbeat',{'printers':names})
                 requested=response.get('inventory_request')
-                if requested and audit_future is None:
+                if audit_future is None and (requested or (auto_audit_needed and time.time()>=next_auto_audit)):
                     from inventory import collect_windows
                     audit_request=requested
                     audit_future=audit_pool.submit(collect_windows)
+                    next_auto_audit=time.time()+300
                 last_heartbeat = time.time()
             if audit_future is not None and audit_future.done():
                 try:snapshot=audit_future.result()
                 except Exception as e:snapshot={'platform':'Windows','summary':{},'components':[],'errors':[str(e)[:500]]}
                 api(config,'pc/inventory',{'request':audit_request,'inventory':snapshot})
+                if snapshot.get('schema_version',0)>=2 and snapshot.get('summary',{}).get('os'):
+                    atomic_json(audit_schema,{'schema':2});auto_audit_needed=False
                 print('Auditoría de componentes enviada al administrador.',flush=True)
                 audit_future=None;audit_request=None
             job = api(config,'pc/claim',{})['job']

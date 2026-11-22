@@ -39,12 +39,13 @@ class PrintPanel : Form {
         Font=new Font("Segoe UI",10);AutoScaleMode=AutoScaleMode.Dpi;
         string ico=Path.Combine(root,"pc","app.ico");if(File.Exists(ico))Icon=new Icon(ico);
         defaultIcon=(Icon)Icon.Clone();
-        var layout=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=8,Padding=new Padding(24)};
+        var layout=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=9,Padding=new Padding(24)};
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute,110));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute,50));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute,70));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute,60));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute,70));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute,55));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute,55));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent,100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute,75));Controls.Add(layout);
@@ -69,9 +70,10 @@ class PrintPanel : Form {
         Button(tools,"Logo / icono / contraseña",()=>OpenConsole("#branding"),240);
         Button(tools,"Minimizar a bandeja",()=>{Hide();tray.Visible=true;},200);
         Button(tools,"Salir",()=>ExitPanel(),100);layout.Controls.Add(tools,0,5);
-        log.Multiline=true;log.ReadOnly=true;log.ScrollBars=ScrollBars.Vertical;log.Dock=DockStyle.Fill;log.BackColor=Color.White;log.Font=new Font("Consolas",9);layout.Controls.Add(log,0,6);
+        var migration=new FlowLayoutPanel {Dock=DockStyle.Fill};Button(migration,"Cambiar servidor / restablecer",()=>ResetLocal(),280);Button(migration,"Respaldo / restaurar / limpiar",()=>BackupTools(),280);layout.Controls.Add(migration,0,6);
+        log.Multiline=true;log.ReadOnly=true;log.ScrollBars=ScrollBars.Vertical;log.Dock=DockStyle.Fill;log.BackColor=Color.White;log.Font=new Font("Consolas",9);layout.Controls.Add(log,0,7);
         var footer=new LinkLabel {Dock=DockStyle.Fill,Text="Aplicaciones gestionadas, desarrolladas y administradas por Área de TI GMP · sistemas@grupomipan.com",Padding=new Padding(0,14,0,0)};
-        footer.Links.Clear();int pos=footer.Text.IndexOf("sistemas@");footer.Links.Add(pos,footer.Text.Length-pos,"mailto:sistemas@grupomipan.com");footer.LinkClicked+=(s,e)=>Process.Start(new ProcessStartInfo((string)e.Link.LinkData){UseShellExecute=true});layout.Controls.Add(footer,0,7);
+        footer.Links.Clear();int pos=footer.Text.IndexOf("sistemas@");footer.Links.Add(pos,footer.Text.Length-pos,"mailto:sistemas@grupomipan.com");footer.LinkClicked+=(s,e)=>Process.Start(new ProcessStartInfo((string)e.Link.LinkData){UseShellExecute=true});layout.Controls.Add(footer,0,8);
         tray.Icon=Icon;tray.Text="PRINTER-TAB";tray.Visible=true;tray.DoubleClick+=(s,e)=>Restore();
         var menu=new ContextMenuStrip();menu.Items.Add("Abrir PRINTER-TAB",null,(s,e)=>Restore());menu.Items.Add("Salir",null,(s,e)=>ExitPanel());tray.ContextMenuStrip=menu;
         FormClosing+=(s,e)=>{if(!exiting){e.Cancel=true;Hide();tray.ShowBalloonTip(2500,"PRINTER-TAB","Continúa en la bandeja de Windows. Usa Salir para detener los componentes.",ToolTipIcon.Info);}};
@@ -128,7 +130,47 @@ class PrintPanel : Form {
         try {var type=Type.GetTypeFromProgID("WScript.Shell");if(type==null)return;object shell=Activator.CreateInstance(type);try{foreach(string path in shortcuts){if(!File.Exists(path))continue;object link=type.InvokeMember("CreateShortcut",BindingFlags.InvokeMethod,null,shell,new object[]{path});try{link.GetType().InvokeMember("IconLocation",BindingFlags.SetProperty,null,link,new object[]{iconPath+",0"});link.GetType().InvokeMember("Save",BindingFlags.InvokeMethod,null,link,null);}finally{Marshal.FinalReleaseComObject(link);}}}finally{Marshal.FinalReleaseComObject(shell);}}
         catch(Exception e){Append("Icono aplicado al panel; no se pudieron actualizar accesos directos: "+e.Message);}
     }
-    void UpdateState(){state.Text="Servidor: "+(Running(hub)?"activo en http://localhost:8765":"detenido en este panel")+"   ·   Impresión: "+(Running(agent)?"activa":"detenida en este panel");startHub.Text=hubConfigured?"Iniciar servidor":"Crear servidor (TI)";startAgent.Text=agentConfigured?"Iniciar impresión":"Unir cliente (código)";}
+    void UpdateState(){state.Text=(agentConfigured?"Servidor de la cuenta: "+consoleUrl:"Servidor local: "+(Running(hub)?"activo en http://localhost:8765":"detenido"))+"   ·   Impresión: "+(Running(agent)?"activa":"detenida");startHub.Text=hubConfigured?"Iniciar servidor":"Crear servidor (TI)";startAgent.Text=agentConfigured?"Iniciar impresión":"Unir cliente (código)";}
+    async Task ResetLocal(){
+        using(var form=new Form {Text="Cambiar servidor / empezar de cero",Size=new Size(620,460),StartPosition=FormStartPosition.CenterParent,Font=Font,FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false}){
+            var text=new Label {Left=22,Top=18,Width=560,Height=120,Text="Se guardará un respaldo local antes de quitar la configuración. No se borran impresoras de Windows ni datos del servidor remoto.\n\nRevisa primero las colas de impresión: restablecer no cancela documentos ya enviados. Después deberás unir este equipo al servidor nuevo con un código nuevo."};form.Controls.Add(text);
+            var scope=new ComboBox {Left=22,Top=146,Width=560,DropDownStyle=ComboBoxStyle.DropDownList};scope.Items.Add("Solo cliente: quitar vinculación y envíos locales");scope.Items.Add("Todo: reiniciar también cuenta y servidor local");scope.SelectedIndex=0;form.Controls.Add(scope);
+            form.Controls.Add(new Label {Left=22,Top=193,Width=560,Height=25,Text="Escribe RESTABLECER para confirmar:"});
+            var confirm=new TextBox {Left=22,Top=223,Width=560};form.Controls.Add(confirm);
+            form.Controls.Add(new Label {Left=22,Top=265,Width=560,Height=60,Text="El servidor nuevo debe estar accesible por su IP de ZeroTier/Radmin y puerto TCP 8765. Los códigos nuevos incluyen esa dirección; no uses localhost para otros equipos."});
+            var ok=new Button {Text="Respaldar y restablecer",Left=250,Top=345,Width=210,Height=40,DialogResult=DialogResult.OK};var cancel=new Button {Text="Cancelar",Left=470,Top=345,Width=110,Height=40,DialogResult=DialogResult.Cancel};form.Controls.Add(ok);form.Controls.Add(cancel);form.CancelButton=cancel;
+            if(form.ShowDialog(this)!=DialogResult.OK)return;
+            if(confirm.Text!="RESTABLECER"){ShowError("No se modificó nada. Escribe RESTABLECER para confirmar.");return;}
+            working=true;
+            try{
+                foreach(var child in new[]{agent,hub})if(Running(child)){child.Kill();if(!child.WaitForExit(5000))throw new Exception("No se pudo detener un servicio. No se restableció la configuración.");}
+                var result=json.Deserialize<Dictionary<string,object>>(await Bridge("reset-local",new{scope=scope.SelectedIndex==0?"client":"all",confirmation=confirm.Text}));
+                adminToken="";consoleUrl="http://localhost:8765";log.Clear();Append("Configuración restablecida. Respaldo: "+Convert.ToString(result["backup"]));
+            }finally{working=false;}
+        }
+        await LoadStatus();
+        MessageBox.Show(this,"En el servidor NUEVO:\n1. Instala PRINTER-TAB y crea la cuenta.\n2. Abre Administración → Servicio central y registro.\n3. Guarda http://IP-VPN-DEL-SERVIDOR:8765 usando su IP de ZeroTier o Radmin.\n4. Genera un código nuevo por equipo.\n\nEn esta PC: Unir con código → Compartir impresoras → Iniciar impresión. En móviles: desvincular y registrar con un código nuevo. El administrador debe volver a asignar permisos.","Pasar al servidor nuevo");
+    }
+    async Task BackupTools(){
+        var choice=Dialog("Respaldo y mudanza de servidor",new[]{"Acción: EXPORTAR, RESTAURAR o LIMPIAR","Confirmación: RESTAURAR o BORRAR ORIGEN (solo al restaurar/limpiar)"},new[]{"EXPORTAR",""},new[]{false,false});
+        if(choice==null)return;string action=choice[0].Trim().ToUpperInvariant(),path="";
+        if(action!="EXPORTAR"&&action!="RESTAURAR"&&action!="LIMPIAR"){ShowError("Escribe EXPORTAR, RESTAURAR o LIMPIAR.");return;}
+        if(action=="RESTAURAR"&&choice[1]!="RESTAURAR"||action=="LIMPIAR"&&choice[1]!="BORRAR ORIGEN"){ShowError("La confirmación no coincide. No se modificó nada.");return;}
+        if(action=="EXPORTAR"){
+            using(var save=new SaveFileDialog {Title="Guardar respaldo fuera del equipo de origen",Filter="Respaldo PRINTER-TAB (*.zip)|*.zip",FileName="PRINTER-TAB-Respaldo-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".zip"}){if(save.ShowDialog(this)!=DialogResult.OK)return;path=save.FileName;}
+        }else using(var open=new OpenFileDialog {Title=action=="RESTAURAR"?"Seleccionar respaldo a restaurar":"Seleccionar respaldo verificado antes de limpiar",Filter="Respaldo PRINTER-TAB (*.zip)|*.zip"}){if(open.ShowDialog(this)!=DialogResult.OK)return;path=open.FileName;}
+        string detail=action=="LIMPIAR"?"Se eliminarán cuenta, vinculaciones, inventarios y documentos pendientes guardados en esta PC. No se eliminará el archivo de respaldo elegido ni se cancelará la cola de Windows. Copia primero el ZIP al servidor nuevo o a una memoria USB. Se comprobará que corresponde a los datos actuales.":action=="RESTAURAR"?"Se restaurarán cuenta e inventarios en una configuración limpia. Los equipos anteriores quedarán desactivados, los permisos deberán asignarse de nuevo y los trabajos pendientes quedarán detenidos.":"El respaldo contiene cuenta, inventarios, configuración e historial del servidor. No incluye documentos pendientes ni credenciales de cliente. El ZIP contiene datos privados: guárdalo en un lugar protegido y cópialo al equipo nuevo.";
+        if(MessageBox.Show(this,detail+"\n\nSe detendrán los servicios iniciados desde este panel. ¿Continuar?","PRINTER-TAB · "+action,MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+        working=true;
+        try{
+            foreach(var child in new[]{agent,hub})if(Running(child)){child.Kill();if(!child.WaitForExit(5000))throw new Exception("No se pudo detener un servicio.");}
+            string mode=action=="EXPORTAR"?"export-backup":action=="RESTAURAR"?"restore-backup":"clear-origin";
+            var result=json.Deserialize<Dictionary<string,object>>(await Bridge(mode,new{path=path,confirmation=choice[1]}));
+            adminToken="";Append(action+": operación completada.");
+            MessageBox.Show(this,action=="EXPORTAR"?"Respaldo guardado y verificado:\n"+path+"\n\nCópialo al servidor nuevo. Allí usa RESTAURAR y configura su dirección ZeroTier/Radmin antes de generar códigos nuevos.":Convert.ToString(result["message"]),"PRINTER-TAB");
+        }finally{working=false;UpdateState();}
+        await LoadStatus();
+    }
     Process StartChild(string mode) {
         var p=new Process {StartInfo=Command(mode),EnableRaisingEvents=true};
         p.OutputDataReceived+=(s,e)=>{if(e.Data!=null)Append(e.Data);};p.ErrorDataReceived+=(s,e)=>{if(e.Data!=null)Append(e.Data);};

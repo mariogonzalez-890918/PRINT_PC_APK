@@ -42,14 +42,16 @@ async function refreshInventory(){
  const data=await api('admin/inventory');$('inventoryRows').replaceChildren();
  for(const d of data.devices){
   const snapshot=d.inventory||{},summary=snapshot.summary||{},row=el('tr');
+  const old=snapshot.platform==='Windows'&&(!snapshot.schema_version||snapshot.schema_version<2);
+  const field=key=>{const value=summary[key];if(value&&value!=='No disponible')return String(value);if(old)return 'Reporte anterior: actualizar agente y solicitar auditoría';if(snapshot.platform==='Android')return 'Android no permite consultar este dato';return (snapshot.field_status||{})[key]||'No disponible: consultar diagnóstico';};
   row.append(el('td',d.name),el('td',snapshot.platform||(d.role==='pc'?'PC':'Móvil')),el('td',[summary.manufacturer,summary.model,summary.os,summary.os_version].filter(Boolean).join(' · ')));
   const hardware=el('td');hardware.append(el('div',summary.cpu||'CPU pendiente'),el('div',summary.ram_bytes?((Number(summary.ram_bytes)/1073741824).toFixed(1)+' GB RAM'):'RAM pendiente'),el('div',summary.storage_bytes?((Number(summary.storage_bytes)/1073741824).toFixed(1)+' GB almacenamiento'):'Almacenamiento pendiente'));row.append(hardware);
-  const asset=el('td');asset.append(el('div','Serie: '+(summary.serial_number||'No disponible')),el('div','Service Tag: '+(summary.service_tag||'No disponible')),el('div','Asset Tag: '+(summary.asset_tag||'No disponible')));row.append(asset);
-  const types=el('td');types.append(el('div','RAM: '+(summary.ram_types||'No disponible')),el('div','Discos: '+(summary.disk_types||'No disponible')),el('div','Conexión: '+(summary.disk_connections||'No disponible')),el('div','Formato: '+(summary.disk_formats||'No disponible')));row.append(types);
-  const software=el('td');software.append(el('div','Antivirus: '+(summary.antivirus||'No disponible')),el('div',summary.antivirus_status||'Estado de protección no confirmado'),el('div','Office: '+(summary.office_type||'No disponible')),el('div','Versión: '+(summary.office_version||'No disponible')));row.append(software);
+  const asset=el('td');asset.append(el('div','Serie: '+field('serial_number')),el('div','Service Tag: '+field('service_tag')),el('div','Asset Tag: '+field('asset_tag')));row.append(asset);
+  const types=el('td');types.append(el('div','RAM: '+field('ram_types')),el('div','Discos: '+field('disk_types')),el('div','Conexión: '+field('disk_connections')),el('div','Formato: '+field('disk_formats')));row.append(types);
+  const software=el('td');software.append(el('div','Antivirus: '+field('antivirus')),el('div',field('antivirus_status')),el('div','Office: '+field('office_type')),el('div','Versión: '+field('office_version')));row.append(software);
   row.append(el('td',d.pending?'Auditoría solicitada':d.received?new Date(d.received*1000).toLocaleString('es-MX'):'Sin auditoría'));
   const actions=el('td');const request=el('button','Solicitar auditoría');request.disabled=!d.enabled;request.onclick=safely(async()=>{await api('admin/inventory/request',{device:d.id});message('Auditoría solicitada a '+d.name+'. Se completará cuando su agente o APK esté conectado y activo.');await refreshInventory();});actions.append(request);
-  if(d.inventory){const details=el('details');details.append(el('summary','Ver componentes'));const pre=el('pre',JSON.stringify(d.inventory,null,2));pre.style.whiteSpace='pre-wrap';details.append(pre);actions.append(details);}row.append(actions);$('inventoryRows').append(row);
+  if(d.inventory){const details=el('details');details.append(el('summary','Ver componentes / diagnóstico'));if(old)details.append(el('p','Reporte anterior a la auditoría ampliada. Actualiza el EXE del equipo e inicia impresión; enviará una auditoría nueva automáticamente.'));if(snapshot.collected_at)details.append(el('p','Recopilado: '+snapshot.collected_at+' · Agente: '+(snapshot.collector_version||'versión anterior')));for(const error of snapshot.errors||[])details.append(el('p',String(error)));const pre=el('pre',JSON.stringify(d.inventory,null,2));pre.style.whiteSpace='pre-wrap';details.append(pre);actions.append(details);}row.append(actions);$('inventoryRows').append(row);
  }
 }
 async function pair(role){const r=await api('admin/code',{role});const box=$('pairing');box.replaceChildren(el('p','Registro de '+(role==='pc'?'PC':'tablet o celular')+' · vence en 15 minutos y se usa una vez. Correo: '+$('account').textContent));const code=el('textarea');code.readOnly=true;code.value=r.registration;code.rows=5;code.style.width='100%';code.setAttribute('aria-label','Código de registro completo');const copy=el('button','Copiar código de registro');copy.onclick=async()=>{try{await navigator.clipboard.writeText(code.value);message('Código copiado. Úsalo con el correo registrado en el EXE o APK.');}catch{code.focus();code.select();message('Código seleccionado: cópialo completo con Ctrl+C.');}};box.append(code,copy);}
@@ -90,3 +92,9 @@ $('exportInventory').onclick=safely(async()=>{
  const url=URL.createObjectURL(await response.blob()),link=el('a');link.href=url;link.download='PRINTER-TAB-Inventario.xlsx';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
 });
 $('saveServiceUrl').onclick=safely(async()=>{await api('admin/service-url',{url:$('serviceUrl').value});message('Dirección guardada para los próximos códigos de registro. Los clientes no necesitan escribirla. Debe ser accesible desde sus redes.');});
+$('exportBackup').onclick=safely(async()=>{
+ const response=await fetch('/api/admin/backup.zip',{headers:{Authorization:'Bearer '+token}});
+ if(!response.ok)throw Error('No se pudo descargar el respaldo. Se requiere sesión administradora.');
+ const url=URL.createObjectURL(await response.blob()),link=el('a');link.href=url;link.download='PRINTER-TAB-Respaldo-'+new Date().toISOString().slice(0,10)+'.zip';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
+ message('Respaldo descargado. Contiene datos privados de la cuenta. Para restaurar usa Respaldo / restaurar / limpiar en el EXE del servidor nuevo. Los documentos pendientes no se trasladan.');
+});
