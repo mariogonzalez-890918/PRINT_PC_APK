@@ -101,6 +101,35 @@ class CentralTest(unittest.TestCase):
         self.assertIsNone(self.s.claim(self.pc2['id']))
         with self.s.db() as db:self.assertEqual('error',db.execute('SELECT status FROM jobs WHERE id=?',(job['id'],)).fetchone()[0])
 
+    def test_android_spooler_upload_retry_status_and_cancel_are_private(self):
+        self.req('admin/grants',{'tablet':self.mobile['id'],'printers':[self.printer]})
+        job_id=str(uuid.uuid4());options={'printer':self.printer,'name':'Página web','copies':2,'paper':'letter','color':'monochrome'}
+        def upload():
+            request=urllib.request.Request(self.url+'/api/client/jobs/'+job_id,data=b'%PDF-1.4 synthetic web print',headers={
+                'Authorization':'Bearer '+self.mobile['token'],'Content-Type':'application/pdf',
+                'X-Print-Options':base64.b64encode(json.dumps(options).encode()).decode()})
+            with urllib.request.urlopen(request) as response:return json.load(response)
+        self.assertEqual('queued',upload()['status']);self.assertEqual('queued',upload()['status'])
+        self.assertEqual(2,self.req('client/jobs/'+job_id,token=self.mobile['token'])['copies'])
+        with self.assertRaises(urllib.error.HTTPError):self.req('client/jobs/'+job_id,token=self.pc1['token'])
+        with self.assertRaises(urllib.error.HTTPError):self.req('client/jobs/'+job_id+'/cancel',{},self.pc1['token'])
+        self.assertTrue(self.req('client/jobs/'+job_id+'/cancel',{},self.mobile['token'])['cancelled'])
+        self.assertEqual('cancelled',upload()['status']);self.assertIsNone(self.s.claim(self.pc2['id']))
+        self.assertFalse((self.s.files/job_id).exists())
+
+    def test_cancel_before_upload_survives_restart_and_cancel_after_claim_is_honest(self):
+        self.req('admin/grants',{'tablet':self.mobile['id'],'printers':[self.printer]})
+        job_id=str(uuid.uuid4())
+        self.assertTrue(self.req('client/jobs/'+job_id+'/cancel',{},self.mobile['token'])['cancelled'])
+        restarted=Service(self.tmp.name)
+        result=restarted.enqueue(self.mobile['id'],job_id,{'printer':self.printer},b'%PDF-1.4 fixture','application/pdf')
+        self.assertEqual('cancelled',result['status']);self.assertIsNone(restarted.claim(self.pc2['id']))
+        accepted=self.s.enqueue(self.mobile['id'],str(uuid.uuid4()),{'printer':self.printer},b'%PDF-1.4 fixture','application/pdf')
+        self.s.claim(self.pc2['id'])
+        self.assertFalse(self.req('client/jobs/'+accepted['id']+'/cancel',{},self.mobile['token'])['cancelled'])
+        self.s.finish(self.pc2['id'],accepted['id'],'submitted','Sent to Windows')
+        self.assertEqual('submitted',self.req('client/jobs/'+accepted['id'],token=self.mobile['token'])['status'])
+
     def test_permission_changes_are_committed_before_success_response(self):
         for _ in range(6):
             self.req('admin/grants',{'tablet':self.mobile['id'],'printers':[self.printer]})

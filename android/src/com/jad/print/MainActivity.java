@@ -134,6 +134,9 @@ public class MainActivity extends Activity {
     }
     private void showPrint(){
         currentScreen="print";content.removeAllViews();
+        LinearLayout system=card("Imprimir desde otras aplicaciones");
+        system.addView(text("Activa PRINTER-TAB una vez en los ajustes de impresión de Android. Después, desde Chrome: menú → Compartir → Imprimir (o menú → Imprimir). En el selector elige Todas las impresoras y selecciona PC · impresora. No necesitas abrir esta aplicación para cada impresión.",15,GRAY,false));
+        button(system,"Activar impresión de Android",()->{try{startActivity(new Intent(android.provider.Settings.ACTION_PRINT_SETTINGS));}catch(android.content.ActivityNotFoundException error){say("Abre Ajustes de Android y busca Impresión para activar PRINTER-TAB.");}});
         LinearLayout device=card("1 · Elige dónde imprimir");
         pcSpinner=spinner(device,"Computadora",new String[]{"Cargando..."});printerSpinner=spinner(device,"Impresora",new String[]{"Sin selección"});
         button(device,"Actualizar impresoras",this::refreshPrinters);

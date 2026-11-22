@@ -51,6 +51,7 @@ class Service:
             CREATE TABLE IF NOT EXISTS printer_sharing(printer TEXT PRIMARY KEY, enabled INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS inventories(device TEXT PRIMARY KEY, received REAL, payload TEXT);
             CREATE TABLE IF NOT EXISTS inventory_requests(id TEXT PRIMARY KEY, device TEXT, created REAL, status TEXT);
+            CREATE TABLE IF NOT EXISTS job_cancellations(id TEXT PRIMARY KEY, device TEXT);
             CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, tablet TEXT, printer TEXT, pc TEXT,
               name TEXT, mime TEXT, copies INTEGER, scale TEXT, paper TEXT, color TEXT,
               fingerprint TEXT, status TEXT, message TEXT, created REAL, updated REAL);
@@ -281,6 +282,11 @@ class Service:
         fingerprint = hashlib.sha256(content + json.dumps([pid,copies,scale,paper,color,mime]).encode()).hexdigest()
         now = time.time()
         with self.lock, self.db() as db:
+            cancelled = db.execute('SELECT device FROM job_cancellations WHERE id=?',(job_id,)).fetchone()
+            if cancelled:
+                if cancelled['device'] != tablet:
+                    raise PermissionError('Identificador no disponible.')
+                return {'id':job_id,'status':'cancelled','message':'Cancelado antes de entregarlo a la PC.'}
             old = db.execute('SELECT * FROM jobs WHERE id=?', (job_id,)).fetchone()
             if old:
                 if old['tablet'] != tablet or old['fingerprint'] != fingerprint:
@@ -308,6 +314,33 @@ class Service:
                 (self.files / job_id).unlink(missing_ok=True)
                 raise
             return dict(db.execute('SELECT * FROM jobs WHERE id=?', (job_id,)).fetchone())
+
+    def cancel_client_job(self, device, job_id):
+        if str(uuid.UUID(job_id)) != job_id:
+            raise ValueError('Identificador inválido.')
+        with self.lock, self.db() as db:
+            row=db.execute('SELECT * FROM jobs WHERE id=?',(job_id,)).fetchone()
+            tombstone=db.execute('SELECT device FROM job_cancellations WHERE id=?',(job_id,)).fetchone()
+            if (row and row['tablet']!=device) or (tombstone and tombstone['device']!=device):
+                raise PermissionError('Trabajo no disponible para este equipo.')
+            if row and row['status']!='queued' and not tombstone:
+                return {'cancelled':False,'status':row['status'],'message':'Ya entregado a la PC. Revisa la cola de Windows.'}
+            if not tombstone:
+                if db.execute('SELECT count(*) FROM job_cancellations').fetchone()[0]>=10000:
+                    raise ValueError('Límite de cancelaciones alcanzado. Contacta al administrador.')
+                db.execute('INSERT INTO job_cancellations VALUES(?,?)',(job_id,device))
+            if row and row['status']=='queued':
+                db.execute("UPDATE jobs SET status='error',message='Cancelado por el remitente',updated=? WHERE id=?",(time.time(),job_id))
+                (self.files/job_id).unlink(missing_ok=True)
+            return {'cancelled':True,'status':'cancelled'}
+
+    def client_job(self, device, job_id):
+        with self.db() as db:
+            row=db.execute('SELECT * FROM jobs WHERE id=? AND tablet=?',(job_id,device)).fetchone()
+            cancelled=db.execute('SELECT 1 FROM job_cancellations WHERE id=? AND device=?',(job_id,device)).fetchone()
+            if cancelled:return {'id':job_id,'status':'cancelled'}
+            if not row:raise PermissionError('Trabajo no disponible para este equipo.')
+            return dict(row)
 
     def claim(self, pc):
         with self.lock, self.db() as db:
@@ -409,7 +442,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.respond({'error':'Demasiados intentos incorrectos. Espera un minuto antes de volver a intentar.'},429)
             return
         if method=='GET' and path=='/api/health':
-            self.respond({'service':'PRINTER-TAB','version':'0.3.0','ready':bool(s.owner_email())})
+            self.respond({'service':'PRINTER-TAB','version':'0.4.0','ready':bool(s.owner_email())})
             return
         if method == 'GET' and path == '/branding/logo':
             logo = s.logo()
@@ -578,6 +611,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if method == 'GET' and path.endswith('/jobs'):
                 with s.db() as db:
                     self.respond({'jobs':[dict(r) for r in db.execute('SELECT * FROM jobs WHERE tablet=? ORDER BY created DESC LIMIT 30',(tablet,))]})
+                return
+            if path.startswith('/api/client/jobs/') and path.endswith('/cancel') and method=='POST':
+                self.body_json()
+                self.respond(s.cancel_client_job(tablet,path.split('/')[-2]))
+                return
+            if path.startswith('/api/client/jobs/') and method=='GET':
+                self.respond(s.client_job(tablet,path.rsplit('/',1)[-1]))
                 return
             if method == 'POST' and (path.startswith('/api/tablet/jobs/') or path.startswith('/api/client/jobs/')):
                 job_id = path.rsplit('/',1)[-1]
