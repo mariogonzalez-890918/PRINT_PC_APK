@@ -222,6 +222,8 @@ class Service:
         if len(data.encode())>512*1024 or len(payload.get('components',[]))>500:
             raise ValueError('Inventario demasiado grande.')
         with self.lock,self.db() as db:
+            if not db.execute('SELECT 1 FROM devices WHERE id=? AND enabled=1',(device,)).fetchone():
+                raise PermissionError('Equipo desactivado o eliminado.')
             if request_id:
                 row=db.execute('SELECT 1 FROM inventory_requests WHERE id=? AND device=?',(request_id,device)).fetchone()
                 if not row:raise PermissionError('Solicitud de auditoría ajena o inexistente.')
@@ -238,10 +240,37 @@ class Service:
                 result.append(item)
             return result
 
+    def delete_device(self, device, confirmation):
+        if confirmation != device:
+            raise ValueError('Confirma el equipo que deseas eliminar.')
+        with self.lock:
+            with self.db() as db:
+                row=db.execute('SELECT * FROM devices WHERE id=?',(device,)).fetchone()
+                if not row:raise ValueError('El equipo ya no existe.')
+                if row['enabled']:raise ValueError('Primero desactiva el equipo antes de eliminarlo.')
+                if db.execute("SELECT 1 FROM jobs WHERE (tablet=? OR pc=?) AND status='claimed'",(device,device)).fetchone():
+                    raise ValueError('Hay impresiones entregadas a una PC sin confirmar. Revisa y resuelve esos trabajos antes de eliminar el equipo.')
+                queued=[r['id'] for r in db.execute("SELECT id FROM jobs WHERE (tablet=? OR pc=?) AND status='queued'",(device,device))]
+                db.execute("UPDATE jobs SET status='error',message='Cancelado: equipo eliminado por el administrador',updated=? WHERE (tablet=? OR pc=?) AND status='queued'",(time.time(),device,device))
+                db.execute('DELETE FROM grants WHERE tablet=? OR printer IN (SELECT id FROM printers WHERE pc=?)',(device,device))
+                db.execute('DELETE FROM printer_sharing WHERE printer IN (SELECT id FROM printers WHERE pc=?)',(device,))
+                db.execute('DELETE FROM printers WHERE pc=?',(device,))
+                db.execute('DELETE FROM inventories WHERE device=?',(device,))
+                db.execute('DELETE FROM inventory_requests WHERE device=?',(device,))
+                db.execute('DELETE FROM job_cancellations WHERE device=?',(device,))
+                db.execute('DELETE FROM devices WHERE id=?',(device,))
+            cleanup_errors=[]
+            for job_id in queued:
+                try:(self.files/job_id).unlink(missing_ok=True)
+                except OSError:cleanup_errors.append(job_id)
+        return {'ok':True,'cancelled':len(queued),'cleanup_errors':cleanup_errors}
+
     def heartbeat(self, pc, printers):
         if not isinstance(printers, list) or len(printers) > 200:
             raise ValueError('Lista de impresoras inválida.')
         with self.lock, self.db() as db:
+            if not db.execute("SELECT 1 FROM devices WHERE id=? AND enabled=1 AND role='pc'",(pc,)).fetchone():
+                raise PermissionError('PC desactivada o eliminada.')
             db.execute('UPDATE devices SET seen=? WHERE id=?', (time.time(), pc))
             db.execute('UPDATE printers SET available=0 WHERE pc=?', (pc,))
             for p in printers:
@@ -448,7 +477,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.respond({'error':'Demasiados intentos incorrectos. Espera un minuto antes de volver a intentar.'},429)
             return
         if method=='GET' and path=='/api/health':
-            self.respond({'service':'PRINTER-TAB','version':'0.4.1','ready':bool(s.owner_email())})
+            self.respond({'service':'PRINTER-TAB','version':'0.4.2','ready':bool(s.owner_email())})
             return
         if method=='GET' and path=='/api/admin/backup.zip':
             if not s.admin(self.token()):raise PermissionError('Se requiere sesión administradora.')
@@ -502,6 +531,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if method == 'POST' and path == '/api/admin/register-pc':
                 b=self.body_json()
                 self.respond(s.register_pc(b['name'],b['printers']),201)
+                return
+            if method=='POST' and path=='/api/admin/device/delete':
+                b=self.body_json()
+                self.respond(s.delete_device(b['id'],b.get('confirmation')))
                 return
             if method == 'POST' and path == '/api/admin/logo':
                 s.set_logo(self.read_body(2*1024*1024))

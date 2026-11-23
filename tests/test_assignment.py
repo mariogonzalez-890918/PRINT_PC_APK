@@ -83,3 +83,51 @@ class AssignmentTest(unittest.TestCase):
         config=json.loads((Path(self.tmp.name)/'profile'/'JADPrint'/'agent'/'agent.json').read_text())
         self.assertEqual(first['id'],self.s.device(config['token'],'pc')['id'])
         self.assertEqual([],self.s.printer_list(self.t1['id']))
+
+    def test_deletion_requires_admin_disabled_device_and_confirmation(self):
+        data={'id':self.t1['id'],'confirmation':self.t1['id']}
+        with self.assertRaises(urllib.error.HTTPError):self.request('admin/device/delete',data,self.t2['token'])
+        with self.assertRaises(urllib.error.HTTPError):self.request('admin/device/delete',data)
+        self.request('admin/device',{'id':self.t1['id'],'enabled':False})
+        with self.assertRaises(urllib.error.HTTPError):self.request('admin/device/delete',dict(data,confirmation='wrong'))
+        self.assertTrue(self.request('admin/device/delete',data)['ok'])
+        with self.s.db() as db:self.assertIsNone(db.execute('SELECT id FROM devices WHERE id=?',(self.t1['id'],)).fetchone())
+        with self.assertRaises(PermissionError):self.s.device(self.t1['token'])
+
+    def test_delete_pc_removes_printers_grants_inventory_and_cancels_queue(self):
+        pc=self.s.register_pc('PC to remove',['Printer demo'])
+        with self.s.db() as db:
+            pid=db.execute('SELECT id FROM printers WHERE pc=?',(pc['id'],)).fetchone()[0]
+            db.execute('INSERT INTO grants VALUES(?,?)',(self.t1['id'],pid))
+            db.execute('INSERT INTO printer_sharing VALUES(?,1)',(pid,))
+        self.s.save_inventory(pc['id'],{'platform':'Windows','summary':{'model':'Synthetic'},'components':[]})
+        self.s.request_inventory(pc['id'])
+        job=self.s.enqueue(self.t1['id'],'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',{'printer':pid},b'%PDF-1.4 fixture','application/pdf')
+        self.request('admin/device',{'id':pc['id'],'enabled':False})
+        result=self.request('admin/device/delete',{'id':pc['id'],'confirmation':pc['id']})
+        self.assertEqual(1,result['cancelled']);self.assertFalse((self.s.files/job['id']).exists())
+        with self.assertRaises(PermissionError):self.s.heartbeat(pc['id'],['Late printer report'])
+        with self.assertRaises(PermissionError):self.s.save_inventory(pc['id'],{'platform':'Windows','summary':{},'components':[]})
+        with self.s.db() as db:
+            for table,column in [('printers','pc'),('inventories','device'),('inventory_requests','device')]:
+                self.assertEqual(0,db.execute('SELECT count(*) FROM '+table+' WHERE '+column+'=?',(pc['id'],)).fetchone()[0])
+            self.assertEqual(0,db.execute('SELECT count(*) FROM grants WHERE printer=?',(pid,)).fetchone()[0])
+            self.assertEqual(0,db.execute('SELECT count(*) FROM printer_sharing WHERE printer=?',(pid,)).fetchone()[0])
+            self.assertEqual('error',db.execute('SELECT status FROM jobs WHERE id=?',(job['id'],)).fetchone()[0])
+
+    def test_delete_sender_cannot_interrupt_claimed_print_and_preserves_history(self):
+        pc=self.s.register_pc('PC retained',['Printer demo'])
+        with self.s.db() as db:
+            pid=db.execute('SELECT id FROM printers WHERE pc=?',(pc['id'],)).fetchone()[0]
+            db.execute('INSERT INTO grants VALUES(?,?)',(self.t1['id'],pid))
+        job=self.s.enqueue(self.t1['id'],'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',{'printer':pid},b'%PDF-1.4 fixture','application/pdf')
+        self.s.claim(pc['id'])
+        self.request('admin/device',{'id':self.t1['id'],'enabled':False})
+        data={'id':self.t1['id'],'confirmation':self.t1['id']}
+        with self.assertRaises(urllib.error.HTTPError):self.request('admin/device/delete',data)
+        self.s.finish(pc['id'],job['id'],'submitted','Sent to Windows')
+        self.request('admin/device/delete',data)
+        with self.s.db() as db:
+            self.assertEqual('submitted',db.execute('SELECT status FROM jobs WHERE id=?',(job['id'],)).fetchone()[0])
+            self.assertEqual(1,db.execute('SELECT count(*) FROM printers WHERE pc=?',(pc['id'],)).fetchone()[0])
+            self.assertEqual(0,db.execute('SELECT count(*) FROM grants WHERE tablet=?',(self.t1['id'],)).fetchone()[0])

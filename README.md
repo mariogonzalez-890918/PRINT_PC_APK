@@ -1,4 +1,4 @@
-# PRINTER-TAB 0.4.1
+# PRINTER-TAB 0.4.2
 
 Aplicaciones gestionadas, desarrolladas y administradas por **Área de TI GMP · [sistemas@grupomipan.com](mailto:sistemas@grupomipan.com)**.
 
@@ -8,8 +8,8 @@ Servidor central de administración, agentes Windows y APK Android. El correo id
 
 Los archivos están en [Releases](https://github.com/mariogonzalez-890918/PRINT_PC_APK/releases):
 
-- **PRINTER-TAB-Instalador-0.4.1.exe**: Windows x64. Incluye Python, las librerías, panel gráfico, icono y motor de impresión. No requiere instalar Python o Docker por separado. Se instala en las PCs cliente y, si se utiliza una PC Windows como servidor, en ella también.
-- **PRINTER-TAB-Android-0.4.1.apk**: Android 8 o posterior para tablets y celulares. Se instala encima de la APK anterior con la misma firma y el paquete `com.jad.print` para conservar la vinculación.
+- **PRINTER-TAB-Instalador-0.4.2.exe**: Windows x64. Incluye Python, las librerías, panel gráfico, icono y motor de impresión. No requiere instalar Python o Docker por separado. Se instala en las PCs cliente y, si se utiliza una PC Windows como servidor, en ella también.
+- **PRINTER-TAB-Android-0.4.2.apk**: Android 8 o posterior para tablets y celulares. Se instala encima de la APK anterior con la misma firma y el paquete `com.jad.print` para conservar la vinculación.
 
 El instalador Windows todavía no tiene certificado de firma de editor. La APK está firmada para instalación directa, fuera de Play Store. La versión es inicial y requiere validar la impresión física en los modelos concretos de impresora.
 
@@ -53,7 +53,7 @@ Si prefieres empezar sin conservar la cuenta anterior, usa **Cambiar servidor / 
 
 ## Imprimir una página desde la tablet o celular Android
 
-1. Actualiza el servidor/PCs y la APK a 0.4.1. Conserva la instalación anterior: no desinstales la APK si quieres mantener la vinculación.
+1. Actualiza el servidor/PCs y la APK a 0.4.2. Conserva la instalación anterior: no desinstales la APK si quieres mantener la vinculación.
 2. Vincula el móvil con correo y código si aún no lo está. El administrador debe asignarle las impresoras.
 3. En PRINTER-TAB pulsa **Activar impresión de Android**. En los ajustes del sistema activa el servicio **PRINTER-TAB**. Android requiere esta autorización manual una sola vez; la APK no puede habilitarse sola.
 4. En Chrome abre la página y utiliza **menú → Compartir → Imprimir** (en algunas apps aparece directamente **Imprimir**). En el selector pulsa **Todas las impresoras** y elige **PC · impresora**. Selecciona páginas, copias, A4/Carta y color/monocromo y confirma en Android.
@@ -66,6 +66,8 @@ El trabajo permanece en espera si la PC está desconectada. Solo se marca entreg
 Esta entrega incluye Android y Windows. iPhone/iPad requieren una aplicación iOS propia y su distribución firmada; no se incluye una IPA ni integración AirPrint en esta versión.
 
 No es necesario dar la contraseña administradora a cada cliente: se unen con correo y código. Un cliente nuevo comienza sin permisos de impresión. Desactivar una PC, dispositivo o la compartición de una impresora impide nuevos trabajos autorizados por esa condición. Los trabajos ya entregados al controlador requieren revisar la cola Windows.
+
+Para retirar definitivamente un equipo, desactívalo y pulsa **Eliminar equipo**, junto a **Reactivar**, en la consola. Tras confirmar se eliminan su vinculación, inventario, solicitudes de auditoría, impresoras publicadas y permisos asociados; se cancelan sus trabajos todavía en espera y se conserva el historial de impresión. La operación requiere sesión administradora. Si existen trabajos entregados a una PC sin confirmar, primero deben resolverse. Para usar nuevamente el equipo será necesario registrarlo con un código nuevo. No desinstala la aplicación ni elimina controladores de Windows o archivos en el equipo remoto.
 
 ## Auditoría de PCs, tablets y celulares
 
@@ -93,7 +95,7 @@ Para tickets o etiquetas configura el rollo/tamaño en el controlador de Windows
 
 Desde **Logo / icono / contraseña** puedes cambiar/restaurar logo e icono de Windows y cambiar contraseña. PNG/JPG/WebP hasta 2 MB; el icono también admite ICO. El icono personalizado se aplica al panel, bandeja y accesos directos existentes; el del instalador/EXE en Explorador y el de Android son los incorporados en la compilación.
 
-Cierra la versión anterior con **Salir** antes de actualizar el EXE. Datos Windows: `%LOCALAPPDATA%\JADPrint`. Se conserva esa ruta para mantener cuentas, colas, permisos y vinculaciones de versiones anteriores. Los códigos antiguos simples siguen siendo compatibles en los clientes que ya conservan una dirección; para nuevas instalaciones genera códigos PT3 con el servidor 0.4.1.
+Cierra la versión anterior con **Salir** antes de actualizar el EXE. Datos Windows: `%LOCALAPPDATA%\JADPrint`. Se conserva esa ruta para mantener cuentas, colas, permisos y vinculaciones de versiones anteriores. Los códigos antiguos simples siguen siendo compatibles en los clientes que ya conservan una dirección; para nuevas instalaciones genera códigos PT3 con el servidor 0.4.2.
 
 ## Alojamiento opcional del servidor
 

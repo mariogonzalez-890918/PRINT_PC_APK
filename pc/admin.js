@@ -9,6 +9,11 @@ async function api(path,body){
 }
 function safely(fn){return async()=>{try{await fn();}catch(e){message(e.message);}};}
 function toggleDevice(d){const b=el('button',d.enabled?'Desactivar':'Reactivar','secondary');b.onclick=safely(async()=>{await api('admin/device',{id:d.id,enabled:!d.enabled});await refresh();});return b;}
+function deleteDevice(d){const b=el('button','Eliminar equipo','secondary');b.style.color='#a21d26';b.onclick=safely(async()=>{
+ if(!confirm('¿Eliminar definitivamente '+d.name+'?\n\nSe retirarán su vinculación, inventario, impresoras publicadas y permisos. Los trabajos en espera se cancelarán; el historial de impresión se conservará. Para volver a usarlo necesitarás registrarlo con un código nuevo.'))return;
+ b.disabled=true;
+ try{const result=await api('admin/device/delete',{id:d.id,confirmation:d.id});await refresh();message('Equipo eliminado: '+d.name+'.'+(result.cancelled?' Trabajos en espera cancelados: '+result.cancelled+'.':'')+(result.cleanup_errors?.length?' Algunos archivos de trabajos cancelados no se pudieron limpiar; revisa el almacenamiento del servidor.':''));}finally{if(b.isConnected)b.disabled=false;}
+ });return b;}
 async function refresh(){
  const data=await api('admin/state');$('login').hidden=true;$('dashboard').hidden=false;$('account').textContent=data.email;
  $('serviceUrl').value=data.service_url||'';
@@ -25,12 +30,12 @@ async function refresh(){
     label.append(cb,document.createTextNode('Compartir '+p.name+(p.available?'':' · no disponible')));card.append(label);
     cb.onchange=async()=>{const requested=cb.checked;cb.disabled=true;try{await api('admin/printer-sharing',{printer:p.id,enabled:requested});p.shared=requested?1:0;message(p.name+(requested?' habilitada para compartir.':' deshabilitada para compartir.'));}catch(error){cb.checked=!requested;message(error.message);}finally{cb.disabled=false;}};
    }
-   card.append(toggleDevice(d));$('pcs').append(card);
+   card.append(toggleDevice(d));if(!d.enabled)card.append(deleteDevice(d));$('pcs').append(card);
   }
   const receiver=el('div',undefined,'card');receiver.append(el('h3',(d.role==='pc'?'PC · ':'Móvil · ')+d.name),el('span',d.enabled?'Registrado':'Desactivado','badge'));
   for(const p of data.printers){const label=el('label',undefined,'check'),cb=el('input');cb.type='checkbox';cb.value=p.id;cb.checked=data.grants.some(g=>g.tablet===d.id&&g.printer===p.id);label.append(cb,document.createTextNode((devices.get(p.pc)?.name||'PC')+' · '+p.name+(p.shared===0?' · compartición desactivada':'')));receiver.append(label);}
   if(!data.printers.length)receiver.append(el('p','No hay impresoras publicadas todavía.','muted'));
-  const save=el('button','Guardar asignación');save.onclick=safely(async()=>{await api('admin/grants',{tablet:d.id,printers:[...receiver.querySelectorAll('input:checked')].map(c=>c.value)});message('Asignación guardada para '+d.name+'.');});receiver.append(save);if(d.role!=='pc')receiver.append(toggleDevice(d));$('tablets').append(receiver);
+  const save=el('button','Guardar asignación');save.onclick=safely(async()=>{await api('admin/grants',{tablet:d.id,printers:[...receiver.querySelectorAll('input:checked')].map(c=>c.value)});message('Asignación guardada para '+d.name+'.');});receiver.append(save);if(d.role!=='pc')receiver.append(toggleDevice(d));if(!d.enabled)receiver.append(deleteDevice(d));$('tablets').append(receiver);
  }
  if(!$('pcs').children.length)$('pcs').append(el('p','Genera un código de PC y únela con su correo.','muted'));
  if(!$('tablets').children.length)$('tablets').append(el('p','Todavía no hay equipos registrados.','muted'));
