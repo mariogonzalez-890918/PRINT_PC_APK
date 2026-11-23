@@ -1,4 +1,4 @@
-# PRINTER-TAB 0.4.2
+# PRINTER-TAB 0.5.0
 
 Aplicaciones gestionadas, desarrolladas y administradas por **Área de TI GMP · [sistemas@grupomipan.com](mailto:sistemas@grupomipan.com)**.
 
@@ -8,8 +8,8 @@ Servidor central de administración, agentes Windows y APK Android. El correo id
 
 Los archivos están en [Releases](https://github.com/mariogonzalez-890918/PRINT_PC_APK/releases):
 
-- **PRINTER-TAB-Instalador-0.4.2.exe**: Windows x64. Incluye Python, las librerías, panel gráfico, icono y motor de impresión. No requiere instalar Python o Docker por separado. Se instala en las PCs cliente y, si se utiliza una PC Windows como servidor, en ella también.
-- **PRINTER-TAB-Android-0.4.2.apk**: Android 8 o posterior para tablets y celulares. Se instala encima de la APK anterior con la misma firma y el paquete `com.jad.print` para conservar la vinculación.
+- **PRINTER-TAB-Instalador-0.5.0.exe**: Windows x64. Incluye Python, las librerías, panel gráfico, icono y motor de impresión. No requiere instalar Python o Docker por separado. Se instala en las PCs cliente y, si se utiliza una PC Windows como servidor, en ella también.
+- **PRINTER-TAB-Android-0.5.0.apk**: Android 8 o posterior para tablets y celulares. Se instala encima de la APK anterior con la misma firma y el paquete `com.jad.print` para conservar la vinculación.
 
 El instalador Windows todavía no tiene certificado de firma de editor. La APK está firmada para instalación directa, fuera de Play Store. La versión es inicial y requiere validar la impresión física en los modelos concretos de impresora.
 
@@ -23,7 +23,23 @@ Funciona con una dirección del servidor que sea accesible desde los equipos:
 - **ZeroTier, Radmin u otra VPN:** IP de la red virtual y rutas/firewall que permitan TCP 8765. La VPN debe incluir al dispositivo y permitir comunicación con la PC servidor.
 - **Datos móviles sin VPN:** servidor público por HTTPS. No hace falta comprar un dominio propio; un alojamiento puede entregar su propia dirección HTTPS. Un servidor que solo tenga IP privada necesita publicación, enrutamiento o un servicio intermedio para ser accesible desde Internet.
 
-El código de registro incluye la dirección de conexión configurada por el administrador. No es una redirección por correo ni atraviesa por sí solo NAT, firewalls o redes aisladas. El alojamiento público no viene contratado ni activado en esta entrega.
+El código de registro incluye las direcciones de conexión configuradas por el administrador. No es una redirección por correo ni atraviesa por sí solo NAT, firewalls o redes aisladas. El alojamiento público no viene contratado ni activado en esta entrega.
+
+### LAN, ZeroTier y Radmin sin cambiar de cuenta
+
+Actualiza el servidor, los EXE clientes y la APK a 0.5.0. En **Servicio central y registro** pulsa **Detectar LAN y VPN**, revisa las direcciones del propio servidor y pulsa **Guardar direcciones LAN / VPN**. Puedes escribir hasta 12 direcciones, una por línea. Ejemplo:
+
+```text
+http://192.168.0.10:8765
+http://10.20.30.40:8765
+http://26.10.20.30:8765
+```
+
+Son rutas alternativas al **mismo servidor**, no tres servidores distintos. Los códigos nuevos incluyen todas y una identidad persistente del servidor. El cliente elige una ruta disponible y guarda la lista para cambiar entre LAN y las VPN sin introducir otra IP ni registrarse de nuevo cada vez. Debe existir conectividad real y autorización de firewall para TCP 8765 en cada ruta que se vaya a usar.
+
+Los clientes ya registrados reciben la lista y la identidad cuando vuelven a conectarse con el servidor actualizado (el EXE al consultar personalización o hacer heartbeat; Android al actualizar impresoras o hacer heartbeat). Deben alcanzar al menos la dirección que ya tenían para recibir esa actualización. Si esa dirección dejó de existir antes de actualizar, vincúlalos con un código nuevo; no borres envíos sin confirmar sin revisar antes la cola.
+
+Los cambios de dirección mantienen el identificador del documento pendiente y sus opciones. Una respuesta HTTP que retira permisos no se sortea probando otra red. Antes de enviar credenciales a una dirección alternativa se verifica que corresponde al mismo servidor. Las operaciones que consumen códigos o reclaman un trabajo se envían una sola vez después de seleccionar una ruta: si su respuesta se pierde, no se repiten automáticamente como si fueran una impresión nueva.
 
 ## Cambiar de servidor, respaldo y restablecimiento
 
@@ -53,7 +69,7 @@ Si prefieres empezar sin conservar la cuenta anterior, usa **Cambiar servidor / 
 
 ## Imprimir una página desde la tablet o celular Android
 
-1. Actualiza el servidor/PCs y la APK a 0.4.2. Conserva la instalación anterior: no desinstales la APK si quieres mantener la vinculación.
+1. Actualiza el servidor/PCs y la APK a 0.5.0. Conserva la instalación anterior: no desinstales la APK si quieres mantener la vinculación.
 2. Vincula el móvil con correo y código si aún no lo está. El administrador debe asignarle las impresoras.
 3. En PRINTER-TAB pulsa **Activar impresión de Android**. En los ajustes del sistema activa el servicio **PRINTER-TAB**. Android requiere esta autorización manual una sola vez; la APK no puede habilitarse sola.
 4. En Chrome abre la página y utiliza **menú → Compartir → Imprimir** (en algunas apps aparece directamente **Imprimir**). En el selector pulsa **Todas las impresoras** y elige **PC · impresora**. Selecciona páginas, copias, A4/Carta y color/monocromo y confirma en Android.
@@ -95,7 +111,7 @@ Para tickets o etiquetas configura el rollo/tamaño en el controlador de Windows
 
 Desde **Logo / icono / contraseña** puedes cambiar/restaurar logo e icono de Windows y cambiar contraseña. PNG/JPG/WebP hasta 2 MB; el icono también admite ICO. El icono personalizado se aplica al panel, bandeja y accesos directos existentes; el del instalador/EXE en Explorador y el de Android son los incorporados en la compilación.
 
-Cierra la versión anterior con **Salir** antes de actualizar el EXE. Datos Windows: `%LOCALAPPDATA%\JADPrint`. Se conserva esa ruta para mantener cuentas, colas, permisos y vinculaciones de versiones anteriores. Los códigos antiguos simples siguen siendo compatibles en los clientes que ya conservan una dirección; para nuevas instalaciones genera códigos PT3 con el servidor 0.4.2.
+Cierra la versión anterior con **Salir** antes de actualizar el EXE. Datos Windows: `%LOCALAPPDATA%\JADPrint`. Se conserva esa ruta para mantener cuentas, colas, permisos y vinculaciones de versiones anteriores. Los códigos antiguos simples siguen siendo compatibles en los clientes que ya conservan una dirección; para nuevas instalaciones genera códigos PT3 con el servidor 0.5.0.
 
 ## Alojamiento opcional del servidor
 
@@ -114,4 +130,4 @@ La entrada de inicio es `python pc/central_server.py`. Usa almacenamiento persis
 
 Servidor/agente en `pc/`; Android nativo en `android/`; panel Windows en `tools/Launcher.cs`. `tools/build.ps1` genera ambos instaladores; `-WindowsOnly` omite recompilar Android. Runtime incluido: Python 3.13.9, Pillow 12.0.0 y openpyxl 3.1.5. Compilación Android con JDK 21 y SDK 35; Windows con .NET Framework e Inno Setup 6. Las rutas pueden ajustarse en el script.
 
-Pruebas: `python -m unittest discover -s tests -v` con las dependencias de `requirements-server.txt`. Usan datos temporales y no imprimen en equipos reales. Clave Android fuera del repositorio: `%LOCALAPPDATA%\JADPrint\signing`; consérvala para futuras actualizaciones. No se publican claves, contraseñas, inventarios reales ni datos de cuentas.
+Pruebas: `python -m unittest discover -s tests -v` con las dependencias de `requirements-server.txt`. La prueba JVM del mismo código de conexión Android se ejecuta con `tools/test_android_routing.ps1` y verifica cambio de ruta, reintento del mismo documento, identidad estable y rechazo de otro servidor. Usan servidores temporales y no imprimen en equipos reales; la prueba JVM no sustituye validar el spooler y las VPN en un móvil real. Clave Android fuera del repositorio: `%LOCALAPPDATA%\JADPrint\signing`; consérvala para futuras actualizaciones. No se publican claves, contraseñas, inventarios reales ni datos de cuentas.

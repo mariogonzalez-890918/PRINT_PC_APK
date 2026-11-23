@@ -1,7 +1,7 @@
 [Setup]
 AppId={{35063ED7-9DB3-45CD-BE74-BFAF9F15BBE9}
 AppName=PRINTER-TAB
-AppVersion=0.4.2
+AppVersion=0.5.0
 AppPublisher=Área de TI GMP
 DefaultDirName={localappdata}\Programs\PRINTER-TAB
 DefaultGroupName=PRINTER-TAB
@@ -9,7 +9,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=PRINTER-TAB-Instalador-0.4.2
+OutputBaseFilename=PRINTER-TAB-Instalador-0.5.0
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

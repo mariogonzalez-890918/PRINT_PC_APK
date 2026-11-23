@@ -1,6 +1,7 @@
 """One address format for local/VPN IPs and public HTTPS servers."""
 import ipaddress
 import urllib.parse
+import re
 
 def normalize_url(value):
     value=str(value).strip().rstrip('/')
@@ -17,3 +18,9 @@ def normalize_url(value):
             if host.lower()=='localhost':port=8765
     authority=('['+host+']' if ':' in host else host)+((':'+str(port)) if port is not None else '')
     return urllib.parse.urlunsplit((parsed.scheme,authority,'','',''))
+
+def normalize_urls(value):
+    values=value if isinstance(value,list) else re.split(r'[\s,;]+',str(value).strip()) if str(value).strip() else []
+    result=list(dict.fromkeys(normalize_url(v) for v in values))
+    if len(result)>12:raise ValueError('Configura como máximo 12 direcciones del mismo servidor.')
+    return result

@@ -26,7 +26,7 @@ def main():
         print(json.dumps(reset_local(home,data.get('scope'),data.get('confirmation'))))
         return
     if mode in ('client-state','client-send','publish-client'):
-        from agent import api,printers
+        from agent import api,printers,atomic_json
         path=home/'agent'/'agent.json'
         if not path.exists():raise ValueError('Primero une esta PC con correo y código de registro.')
         config=json.loads(path.read_text(encoding='utf-8'))
@@ -41,6 +41,7 @@ def main():
             from client import send_file
             data=json.loads(sys.stdin.readline())
             print(json.dumps(send_file(config,home,data.get('options'),data.get('path'),data.get('id'))))
+        atomic_json(path,config)
         return
     if mode in ('admin-login','admin-state','admin-grants','admin-code','publish-printers'):
         from agent import api,atomic_json,printers
@@ -95,8 +96,10 @@ def main():
                 result.update(json.loads(cache.read_text(encoding='utf-8')))
             try:
                 branding = api(config,'pc/branding',timeout=4)
+                atomic_json(home/'agent'/'agent.json',config)
                 atomic_json(cache,branding)
                 result.update(branding)
+                result['url']=config['url']
             except Exception:
                 pass
         print(json.dumps(result))

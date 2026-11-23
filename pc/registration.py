@@ -5,11 +5,14 @@ import os
 import socket
 import ipaddress
 import binascii
-from network_config import normalize_url
+from network_config import normalize_url,normalize_urls
 
 def server_urls(port=8765):
     public=os.environ.get('PRINTER_TAB_PUBLIC_URL') or os.environ.get('RENDER_EXTERNAL_URL')
-    if public:return [normalize_url(public)]
+    if public:return normalize_urls(public)
+    return local_server_urls(port)
+
+def local_server_urls(port=8765):
     addresses=set()
     try:
         for address in socket.getaddrinfo(socket.gethostname(),None,socket.AF_INET):
@@ -18,9 +21,10 @@ def server_urls(port=8765):
     except OSError:pass
     return ['http://'+ip+':'+str(port) for ip in sorted(addresses)][:12]
 
-def make_registration(email,code,role,urls):
+def make_registration(email,code,role,urls,server_id=None):
     if not urls:raise ValueError('Configura la dirección pública o conecta el servidor a una red para generar el registro.')
     payload={'version':3,'service':'PRINTER-TAB','email':email,'code':code,'role':role,'urls':urls}
+    if server_id:payload['server_id']=server_id
     return 'PT3.'+base64.urlsafe_b64encode(json.dumps(payload,separators=(',',':')).encode()).decode().rstrip('=')
 
 def parse_registration(value,email,role):
@@ -44,13 +48,18 @@ def parse_registration(value,email,role):
 def join(email,registration,name,role):
     from agent import api
     urls,code=parse_registration(registration,email,role)
+    payload=json.loads(base64.urlsafe_b64decode(registration.strip()[4:]+'='*(-len(registration.strip()[4:])%4)))
     last_error=None
     for url in urls:
         try:
-            data=api({'url':url},'enroll',{'email':email,'code':code,'name':name,'role':role},timeout=8)
-            return dict(data,url=url)
+            from transport import verify
+            verify(url,payload.get('server_id'),3)
         except RuntimeError:
             # An HTTP response means we reached the server: do not reuse a consumed/invalid code elsewhere.
             raise
-        except (OSError,ValueError) as e:last_error=e
+        except (OSError,ValueError) as e:last_error=e;continue
+        # Once a reachable address is selected, never replay a single-use code
+        # after losing the enrollment response.
+        data=api({'url':url,'server_id':payload.get('server_id')},'enroll',{'email':email,'code':code,'name':name,'role':role},timeout=8)
+        return dict(data,url=url,urls=urls)
     raise ValueError('No se pudo llegar al servidor del código. Revisa que esté activo y accesible por Internet, red local o VPN. Detalle: '+str(last_error))

@@ -6,6 +6,7 @@ from pathlib import Path
 import urllib.request
 import urllib.error
 import uuid
+import hashlib
 
 def send_file(config,home,options=None,path=None,job_id=None):
     from agent import atomic_json
@@ -23,15 +24,16 @@ def send_file(config,home,options=None,path=None,job_id=None):
         elif data.startswith(b'\xff\xd8\xff'):mime='image/jpeg'
         else:raise ValueError('Selecciona PDF, PNG o JPEG.')
         options=dict(options,name=source.name)
-        state={'id':job_id,'options':options,'mime':mime,'server':config['url']}
+        state={'id':job_id,'options':options,'mime':mime,'server':config['url'],'identity':hashlib.sha256(config['token'].encode()).hexdigest()}
         temp=document.with_suffix('.tmp');temp.write_bytes(data);os.replace(temp,document)
         atomic_json(pending,state)
-    if state['server']!=config['url']:raise ValueError('El envío pendiente pertenece a otro servidor. Revisa su estado antes de cambiar la cuenta.')
+    from transport import addresses,request
+    if (state.get('identity') and state['identity']!=hashlib.sha256(config['token'].encode()).hexdigest()) or (not state.get('identity') and state['server'] not in addresses(config)):
+        raise ValueError('El envío pendiente pertenece a otro servidor o vinculación. Revisa su estado antes de cambiar la cuenta.')
     encoded=base64.b64encode(json.dumps(state['options']).encode()).decode()
-    req=urllib.request.Request(config['url']+'/api/client/jobs/'+state['id'],data=document.read_bytes(),
-        headers={'Authorization':'Bearer '+config['token'],'Content-Type':state['mime'],'X-Print-Options':encoded})
     try:
-        with urllib.request.urlopen(req,timeout=60) as response:result=json.load(response)
+        result=json.loads(request(config,'client/jobs/'+state['id'],document.read_bytes(),
+            {'Authorization':'Bearer '+config['token'],'Content-Type':state['mime'],'X-Print-Options':encoded},timeout=60))
     except urllib.error.HTTPError as e:
         try:message=json.load(e).get('error','No se pudo registrar el trabajo.')
         finally:e.close()

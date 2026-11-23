@@ -87,6 +87,7 @@ public class MainActivity extends Activity {
     private static class HttpFailure extends IOException {final int status;HttpFailure(int status,String message){super(message);this.status=status;}}
     private byte[] request(String url,String token,String method,byte[] body,String mime,String options) throws Exception{return request(url,token,method,body,mime,options,12000,45000);}
     private byte[] request(String url,String token,String method,byte[] body,String mime,String options,int connectMs,int readMs) throws Exception{
+        if(!token.isEmpty()&&token.equals(prefs.getString("token","")))return new ServerConnection(prefs).request(new URL(url).getPath(),token,method,body,mime,options);
         HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setConnectTimeout(connectMs);c.setReadTimeout(readMs);c.setInstanceFollowRedirects(false);c.setRequestMethod(method);
         if(!token.isEmpty())c.setRequestProperty("Authorization","Bearer "+token);
         if(options!=null)c.setRequestProperty("X-Print-Options",options);
@@ -109,23 +110,28 @@ public class MainActivity extends Activity {
         button(c,"Vincular",()->{
             final String mail=email.getText().toString().trim(),device=name.getText().toString().trim(),pair=code.getText().toString().trim();
             async(()->{
-                JSONArray urls=new JSONArray();String rawCode=pair;
+                JSONArray urls=new JSONArray();String rawCode=pair,expectedServer="";
                 if(pair.startsWith("PT3.")){
                     JSONObject registration;
                     try{registration=new JSONObject(new String(android.util.Base64.decode(pair.substring(4),android.util.Base64.URL_SAFE|android.util.Base64.NO_WRAP),StandardCharsets.UTF_8));}catch(Exception error){throw new IOException("El código de registro está incompleto o no es válido.");}
                     if(!"PRINTER-TAB".equals(registration.optString("service"))||registration.optInt("version")!=3||!"tablet".equals(registration.optString("role")))throw new IOException("Usa un código de registro para tablet o celular, no un código de PC.");
                     if(!mail.equalsIgnoreCase(registration.optString("email")))throw new IOException("El correo no corresponde al código de registro.");
                     urls=registration.getJSONArray("urls");rawCode=registration.getString("code");if(urls.length()<1||urls.length()>12)throw new IOException("Direcciones del registro inválidas.");
+                    expectedServer=registration.optString("server_id");
                 }else if(prefs.contains("url")){urls.put(base());}else throw new IOException("Pega el código completo PT3... que genera el servidor actualizado.");
                 JSONObject b=new JSONObject().put("email",mail).put("name",device).put("code",rawCode).put("role","tablet");
-                JSONObject result=null;String address="";Exception last=null;
+                JSONObject result=null;String address="",serverId="";Exception last=null;
                 for(int i=0;i<urls.length();i++){
                     address=normalizeServer(urls.getString(i));
-                    try{result=new JSONObject(new String(request(address+"/api/enroll","","POST",b.toString().getBytes(StandardCharsets.UTF_8),"application/json",null,3500,8000),StandardCharsets.UTF_8));break;}
-                    catch(HttpFailure error){throw error;}catch(IOException error){last=error;}
+                    try{
+                        JSONObject health=new JSONObject(new String(request(address+"/api/health","","GET",null,"application/json",null,1500,3000),StandardCharsets.UTF_8));
+                        if(!"PRINTER-TAB".equals(health.optString("service"))||(!expectedServer.isEmpty()&&!expectedServer.equals(health.optString("server_id"))))continue;
+                        serverId=health.optString("server_id");
+                    }catch(IOException error){last=error;continue;}
+                    result=new JSONObject(new String(request(address+"/api/enroll","","POST",b.toString().getBytes(StandardCharsets.UTF_8),"application/json",null,3500,8000),StandardCharsets.UTF_8));break;
                 }
                 if(result==null)throw new IOException("No se pudo llegar al servidor del código. Verifica que esté encendido y accesible por Internet, red local o VPN. "+(last==null?"":last.getMessage()));
-                prefs.edit().putString("url",address).putString("email",mail).putString("token",result.getString("token")).commit();
+                prefs.edit().putString("url",address).putString("urls",urls.toString()).putString("server_id",serverId).putString("account_origin",serverId.isEmpty()?address:serverId).putString("email",mail).putString("token",result.getString("token")).commit();
                 runOnUiThread(()->{say("Tablet vinculada. El administrador debe compartirte impresoras.");showPrint();});
                 JSONArray list=api("tablet/printers",null).getJSONArray("printers");runOnUiThread(()->applyPrinters(list));
             });
@@ -153,7 +159,7 @@ public class MainActivity extends Activity {
         if(prefs.contains("pending"))say("Hay un envío sin confirmar. Reintenta el mismo trabajo o consulta el historial antes de enviar otro.");
         LinearLayout more=card("Tu cuenta");more.addView(text(prefs.getString("email","")+"\n"+base(),14,GRAY,false));button(more,"Ver historial",this::showHistory);
         button(more,"Enviar inventario del equipo",()->async(()->pollInventory(true)));
-        button(more,"Probar conexión",()->async(()->{JSONObject health=new JSONObject(new String(request(base()+"/api/health","","GET",null,"application/json",null,5000,5000),StandardCharsets.UTF_8));if(!"PRINTER-TAB".equals(health.optString("service")))throw new IOException("La dirección no corresponde a PRINTER-TAB.");runOnUiThread(()->say("Conexión al servidor correcta. Cuenta: "+prefs.getString("email","")));}));
+        button(more,"Probar conexión",()->async(()->{JSONObject health=new JSONObject(new String(request(base()+"/api/health",prefs.getString("token",""),"GET",null,"application/json",null,5000,5000),StandardCharsets.UTF_8));if(!"PRINTER-TAB".equals(health.optString("service")))throw new IOException("La dirección no corresponde a PRINTER-TAB.");runOnUiThread(()->say("Conexión al servidor correcta. Cuenta: "+prefs.getString("email","")));}));
         button(more,"Desvincular tablet",()->new AlertDialog.Builder(this).setTitle("Desvincular tablet").setMessage("Necesitarás un código nuevo. Los trabajos aceptados permanecen en el servidor.").setNegativeButton("Cancelar",null).setPositiveButton("Desvincular",(d,w)->{prefs.edit().remove("token").remove("pending").apply();new File(getFilesDir(),"pending.bin").delete();selectedFile=null;allPrinters=new JSONArray();showConnect();}).show());
         applyPrinters(allPrinters);updateButton();
     }

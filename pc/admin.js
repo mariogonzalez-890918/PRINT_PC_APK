@@ -96,7 +96,8 @@ $('exportInventory').onclick=safely(async()=>{
  if(!response.ok)throw Error('No se pudo exportar el inventario.');
  const url=URL.createObjectURL(await response.blob()),link=el('a');link.href=url;link.download='PRINTER-TAB-Inventario.xlsx';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
 });
-$('saveServiceUrl').onclick=safely(async()=>{await api('admin/service-url',{url:$('serviceUrl').value});message('Dirección guardada para los próximos códigos de registro. Los clientes no necesitan escribirla. Debe ser accesible desde sus redes.');});
+$('saveServiceUrl').onclick=safely(async()=>{await api('admin/service-url',{url:$('serviceUrl').value});message('Direcciones guardadas. Los códigos nuevos incluyen LAN, ZeroTier y Radmin; los clientes actualizados reciben la lista al conectarse y utilizan la dirección disponible.');});
+$('detectServiceUrls').onclick=safely(async()=>{const data=await api('admin/network-addresses');$('serviceUrl').value=data.urls.join('\n');message('Direcciones detectadas en el servidor. Revisa la lista y pulsa Guardar direcciones LAN / VPN.');});
 $('exportBackup').onclick=safely(async()=>{
  const response=await fetch('/api/admin/backup.zip',{headers:{Authorization:'Bearer '+token}});
  if(!response.ok)throw Error('No se pudo descargar el respaldo. Se requiere sesión administradora.');

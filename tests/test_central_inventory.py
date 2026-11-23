@@ -73,6 +73,15 @@ class CentralTest(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as result:self.req('enroll',{'email':'admin@example.test','code':'bad','name':'bad','role':'tablet'},token='')
         self.assertEqual(429,result.exception.code)
 
+    def test_server_can_advertise_lan_zerotier_and_radmin_together(self):
+        routes=[self.url,'http://10.20.30.40:8765','http://26.10.20.30:8765']
+        self.req('admin/service-url',{'url':'\n'.join(routes)})
+        registration=self.req('admin/code',{'role':'tablet'})['registration']
+        self.assertEqual(routes,parse_registration(registration,'admin@example.test','tablet')[0])
+        with patch('registration.local_server_urls',return_value=routes[1:]):
+            self.assertEqual(routes,self.req('admin/network-addresses')['urls'])
+        with self.assertRaises(urllib.error.HTTPError):self.req('admin/network-addresses',token=self.mobile['token'])
+
     def test_pc_can_send_to_other_pc_and_retry_does_not_duplicate(self):
         self.req('admin/grants',{'tablet':self.pc1['id'],'printers':[self.printer]})
         visible=self.req('client/printers',token=self.pc1['token'])['printers']

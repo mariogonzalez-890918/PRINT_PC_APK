@@ -31,7 +31,7 @@ public class PrinterTabPrintService extends PrintService {
     private String url(){return prefs().getString("url","");}
     private String token(){return prefs().getString("token","");}
     private static String key(String text){return UUID.nameUUIDFromBytes(text.getBytes(StandardCharsets.UTF_8)).toString();}
-    private String account(){return key(url()+"\n"+token());}
+    private String account(){return key(new ServerConnection(prefs()).identity()+"\n"+token());}
     private String id(PrintJob job){return key("PRINTER-TAB-system-job:"+job.getId().toString());}
     private File folder(){File f=new File(getFilesDir(),"system-print");f.mkdirs();return f;}
     private File file(String id,String suffix){return new File(folder(),id+suffix);}
@@ -54,19 +54,10 @@ public class PrinterTabPrintService extends PrintService {
         final int code;HttpError(int code,String message){super(message);this.code=code;}
     }
     private JSONObject request(String base,String auth,String path,byte[] body,String options) throws Exception {
-        HttpURLConnection c=(HttpURLConnection)new URL(base+"/api/client/"+path).openConnection();
-        c.setInstanceFollowRedirects(false);c.setConnectTimeout(5000);c.setReadTimeout(35000);
-        c.setRequestProperty("Authorization","Bearer "+auth);
         try{
-            if(body!=null){c.setRequestMethod("POST");c.setDoOutput(true);c.setRequestProperty("Content-Type",options==null?"application/json":"application/pdf");
-                if(options!=null)c.setRequestProperty("X-Print-Options",options);
-                c.setFixedLengthStreamingMode(body.length);try(OutputStream out=c.getOutputStream()){out.write(body);}}
-            int status=c.getResponseCode();InputStream in=status>=200&&status<300?c.getInputStream():c.getErrorStream();
-            byte[] response=in==null?new byte[0]:read(in,2*1024*1024);
-            JSONObject result;try{result=new JSONObject(new String(response,StandardCharsets.UTF_8));}catch(Exception e){throw new IOException("Respuesta del servidor no válida; se conservará el identificador.");}
-            if(status<200||status>=300)throw new HttpError(status,result.optString("error","Error HTTP "+status));
-            return result;
-        }finally{c.disconnect();}
+            byte[] response=new ServerConnection(prefs()).request("/api/client/"+path,auth,body==null?"GET":"POST",body,options==null?"application/json":"application/pdf",options);
+            return new JSONObject(new String(response,StandardCharsets.UTF_8));
+        }catch(ServerConnection.HttpFailure error){throw new HttpError(error.status,error.getMessage());}
     }
     @Override protected void onConnected(){connected=true;for(PrintJob job:getActivePrintJobs())process(job);}
     @Override protected void onDisconnected(){connected=false;main.removeCallbacksAndMessages(null);}

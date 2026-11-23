@@ -7,16 +7,17 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 def api(config, path, body=None, binary=False, timeout=35):
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(config['url'] + '/api/' + path, data=data,
-          headers={'Authorization':'Bearer '+config.get('token',''), 'Content-Type':'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            result = response.read(26*1024*1024)
-            return result if binary else json.loads(result)
+        from transport import request,learn
+        retry_safe=body is None or path in ('pc/heartbeat','client/heartbeat','pc/finish','pc/inventory','client/inventory')
+        result=request(config,path,data,{'Authorization':'Bearer '+config.get('token',''), 'Content-Type':'application/json'},timeout,retry_safe)
+        if binary:return result
+        result=json.loads(result);learn(config,result);return result
     except urllib.error.HTTPError as e:
         try:
             detail = json.loads(e.read())['error']
@@ -25,9 +26,11 @@ def api(config, path, body=None, binary=False, timeout=35):
         raise RuntimeError(detail) from None
 
 def atomic_json(path, value):
-    temp = path.with_suffix('.tmp')
-    temp.write_text(json.dumps(value),encoding='utf-8')
-    os.replace(temp,path)
+    temp = path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
+    try:
+        temp.write_text(json.dumps(value),encoding='utf-8')
+        os.replace(temp,path)
+    finally:temp.unlink(missing_ok=True)
 
 def printers():
     # Constant script; no names or user input are interpolated into a shell.
@@ -122,6 +125,7 @@ def run(home, interactive=True):
             if time.time()-last_heartbeat > 15:
                 names = printers()
                 response=api(config,'pc/heartbeat',{'printers':names})
+                atomic_json(path,config)
                 requested=response.get('inventory_request')
                 if audit_future is None and (requested or (auto_audit_needed and time.time()>=next_auto_audit)):
                     from inventory import collect_windows

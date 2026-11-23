@@ -152,15 +152,26 @@ class Service:
             return str(row[0]) if row else ''
 
     def set_public_url(self, value):
-        from network_config import normalize_url
-        url=normalize_url(value) if value.strip() else ''
+        from network_config import normalize_urls
+        url='\n'.join(normalize_urls(value))
         with self.lock,self.db() as db:
             if url:db.execute("INSERT INTO branding VALUES('public_url',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(url,))
             else:db.execute("DELETE FROM branding WHERE key='public_url'")
 
     def registration_urls(self, port):
         from registration import server_urls
-        return [self.public_url()] if self.public_url() else server_urls(port)
+        from network_config import normalize_urls
+        return normalize_urls(self.public_url()) if self.public_url() else server_urls(port)
+
+    def server_id(self):
+        if getattr(self,'_server_identity',None):return self._server_identity
+        with self.lock,self.db() as db:
+            db.execute("INSERT OR IGNORE INTO branding VALUES('server_id',?)",(str(uuid.uuid4()),))
+            self._server_identity=db.execute("SELECT value FROM branding WHERE key='server_id'").fetchone()[0]
+            return self._server_identity
+
+    def connection_info(self,port):
+        return {'server_id':self.server_id(),'urls':self.registration_urls(port)}
 
     def admin(self, token):
         with self.db() as db:
@@ -188,7 +199,7 @@ class Service:
             db.execute('DELETE FROM codes WHERE code=?', (row['code'],))
             db.execute('INSERT INTO devices(id,name,role,token) VALUES(?,?,?,?)',
                        (device_id, name.strip(), role, digest(token)))
-        return {'token': token, 'id': device_id, 'email': self.owner_email()}
+        return {'token': token, 'id': device_id, 'email': self.owner_email(),'server_id':self.server_id()}
 
     def printer_list(self, tablet):
         with self.db() as db:
@@ -477,7 +488,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.respond({'error':'Demasiados intentos incorrectos. Espera un minuto antes de volver a intentar.'},429)
             return
         if method=='GET' and path=='/api/health':
-            self.respond({'service':'PRINTER-TAB','version':'0.4.2','ready':bool(s.owner_email())})
+            self.respond({'service':'PRINTER-TAB','version':'0.5.0','server_id':s.server_id(),'ready':bool(s.owner_email())})
             return
         if method=='GET' and path=='/api/admin/backup.zip':
             if not s.admin(self.token()):raise PermissionError('Se requiere sesión administradora.')
@@ -528,6 +539,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 s.set_public_url(self.body_json()['url'])
                 self.respond({'ok':True})
                 return
+            if method=='GET' and path=='/api/admin/network-addresses':
+                from registration import local_server_urls
+                from network_config import normalize_urls
+                self.respond({'urls':normalize_urls(list(dict.fromkeys(normalize_urls(s.public_url())+local_server_urls(self.server.server_port)))[:12])})
+                return
             if method == 'POST' and path == '/api/admin/register-pc':
                 b=self.body_json()
                 self.respond(s.register_pc(b['name'],b['printers']),201)
@@ -577,7 +593,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         db.execute('DELETE FROM codes WHERE expires<?', (time.time(),))
                         db.execute('INSERT INTO codes VALUES(?,?,?)',(digest(code),b['role'],time.time()+900))
                         from registration import make_registration
-                        registration=make_registration(s.owner_email(),code,b['role'],s.registration_urls(self.server.server_port))
+                        # Commit before obtaining the persistent identity through another connection.
+                        db.commit()
+                        registration=make_registration(s.owner_email(),code,b['role'],s.registration_urls(self.server.server_port),s.server_id())
                         db.commit()
                         self.respond({'code':code,'registration':registration,'minutes':15})
                     elif path.endswith('/device'):
@@ -610,11 +628,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if method == 'GET' and path == '/api/pc/branding':
                 logo,icon = s.logo(),s.icon()
                 self.respond({'logo':base64.b64encode(logo).decode() if logo else None,
-                              'icon':base64.b64encode(icon).decode() if icon else None})
+                              'icon':base64.b64encode(icon).decode() if icon else None,'_connection':s.connection_info(self.server.server_port)})
                 return
             if method == 'POST' and path.endswith('/heartbeat'):
                 s.heartbeat(pc,self.body_json()['printers'])
-                self.respond({'ok':True,'inventory_request':s.pending_inventory(pc)})
+                self.respond({'ok':True,'inventory_request':s.pending_inventory(pc),'_connection':s.connection_info(self.server.server_port)})
                 return
             if method=='POST' and path=='/api/pc/inventory':
                 b=self.body_json(600*1024)
@@ -643,7 +661,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if method=='POST' and path=='/api/client/heartbeat':
                 self.body_json()
                 with s.db() as db:db.execute('UPDATE devices SET seen=? WHERE id=?',(time.time(),tablet))
-                self.respond({'ok':True,'inventory_request':s.pending_inventory(tablet)})
+                self.respond({'ok':True,'inventory_request':s.pending_inventory(tablet),'_connection':s.connection_info(self.server.server_port)})
                 return
             if method=='POST' and path=='/api/client/inventory':
                 b=self.body_json(600*1024)
@@ -651,7 +669,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.respond({'ok':True})
                 return
             if method == 'GET' and path.endswith('/printers'):
-                self.respond({'printers':s.printer_list(tablet)})
+                self.respond({'printers':s.printer_list(tablet),'_connection':s.connection_info(self.server.server_port)})
                 return
             if method == 'GET' and path.endswith('/jobs'):
                 with s.db() as db:
