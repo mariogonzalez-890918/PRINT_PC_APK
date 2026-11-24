@@ -49,6 +49,7 @@ class Service:
             CREATE TABLE IF NOT EXISTS printers(id TEXT PRIMARY KEY, pc TEXT, name TEXT, available INTEGER);
             CREATE TABLE IF NOT EXISTS grants(tablet TEXT, printer TEXT, PRIMARY KEY(tablet,printer));
             CREATE TABLE IF NOT EXISTS printer_sharing(printer TEXT PRIMARY KEY, enabled INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS printer_reports(device TEXT PRIMARY KEY, warning TEXT, updated REAL);
             CREATE TABLE IF NOT EXISTS inventories(device TEXT PRIMARY KEY, received REAL, payload TEXT);
             CREATE TABLE IF NOT EXISTS inventory_requests(id TEXT PRIMARY KEY, device TEXT, created REAL, status TEXT);
             CREATE TABLE IF NOT EXISTS job_cancellations(id TEXT PRIMARY KEY, device TEXT);
@@ -268,6 +269,7 @@ class Service:
                 db.execute('DELETE FROM printers WHERE pc=?',(device,))
                 db.execute('DELETE FROM inventories WHERE device=?',(device,))
                 db.execute('DELETE FROM inventory_requests WHERE device=?',(device,))
+                db.execute('DELETE FROM printer_reports WHERE device=?',(device,))
                 db.execute('DELETE FROM job_cancellations WHERE device=?',(device,))
                 db.execute('DELETE FROM devices WHERE id=?',(device,))
             cleanup_errors=[]
@@ -276,13 +278,15 @@ class Service:
                 except OSError:cleanup_errors.append(job_id)
         return {'ok':True,'cancelled':len(queued),'cleanup_errors':cleanup_errors}
 
-    def heartbeat(self, pc, printers):
-        if not isinstance(printers, list) or len(printers) > 200:
+    def heartbeat(self, pc, printers, warning=''):
+        if printers is not None and (not isinstance(printers, list) or len(printers) > 200):
             raise ValueError('Lista de impresoras inválida.')
         with self.lock, self.db() as db:
             if not db.execute("SELECT 1 FROM devices WHERE id=? AND enabled=1 AND role='pc'",(pc,)).fetchone():
                 raise PermissionError('PC desactivada o eliminada.')
             db.execute('UPDATE devices SET seen=? WHERE id=?', (time.time(), pc))
+            db.execute('INSERT INTO printer_reports VALUES(?,?,?) ON CONFLICT(device) DO UPDATE SET warning=excluded.warning,updated=excluded.updated',(pc,str(warning)[:500],time.time()))
+            if printers is None:return
             db.execute('UPDATE printers SET available=0 WHERE pc=?', (pc,))
             for p in printers:
                 name = str(p)[:256]
@@ -488,7 +492,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.respond({'error':'Demasiados intentos incorrectos. Espera un minuto antes de volver a intentar.'},429)
             return
         if method=='GET' and path=='/api/health':
-            self.respond({'service':'PRINTER-TAB','version':'0.5.0','server_id':s.server_id(),'ready':bool(s.owner_email())})
+            self.respond({'service':'PRINTER-TAB','version':'0.6.0','server_id':s.server_id(),'ready':bool(s.owner_email())})
             return
         if method=='GET' and path=='/api/admin/backup.zip':
             if not s.admin(self.token()):raise PermissionError('Se requiere sesión administradora.')
@@ -579,6 +583,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 with s.db() as db:
                     self.respond({'email':s.owner_email(),'service_url':s.public_url(),
                        'devices':[dict(r) for r in db.execute('SELECT id,name,role,enabled,seen FROM devices ORDER BY role,name')],
+                       'printer_reports':[dict(r) for r in db.execute('SELECT * FROM printer_reports')],
                        'printers':[dict(r) for r in db.execute('SELECT p.*,COALESCE(ps.enabled,1) AS shared FROM printers p LEFT JOIN printer_sharing ps ON ps.printer=p.id ORDER BY p.name')],
                        'grants':[dict(r) for r in db.execute('SELECT * FROM grants')],
                        'jobs':[dict(r) for r in db.execute('SELECT * FROM jobs ORDER BY created DESC LIMIT 100')]})
@@ -631,7 +636,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                               'icon':base64.b64encode(icon).decode() if icon else None,'_connection':s.connection_info(self.server.server_port)})
                 return
             if method == 'POST' and path.endswith('/heartbeat'):
-                s.heartbeat(pc,self.body_json()['printers'])
+                b=self.body_json()
+                s.heartbeat(pc,b.get('printers'),b.get('printer_warning',''))
                 self.respond({'ok':True,'inventory_request':s.pending_inventory(pc),'_connection':s.connection_info(self.server.server_port)})
                 return
             if method=='POST' and path=='/api/pc/inventory':

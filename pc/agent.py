@@ -8,7 +8,12 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+import sys
 from concurrent.futures import ThreadPoolExecutor
+from printer_monitor import PrinterMonitor
+
+class ApiFailure(RuntimeError):
+    def __init__(self,status,message):super().__init__(message);self.status=status
 
 def api(config, path, body=None, binary=False, timeout=35):
     data = json.dumps(body).encode() if body is not None else None
@@ -23,7 +28,7 @@ def api(config, path, body=None, binary=False, timeout=35):
             detail = json.loads(e.read())['error']
         except Exception:
             detail = 'HTTP '+str(e.code)
-        raise RuntimeError(detail) from None
+        raise ApiFailure(e.code,detail) from None
 
 def atomic_json(path, value):
     temp = path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
@@ -32,16 +37,22 @@ def atomic_json(path, value):
         os.replace(temp,path)
     finally:temp.unlink(missing_ok=True)
 
-def printers():
-    # Constant script; no names or user input are interpolated into a shell.
-    script = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; @(Get-Printer -ErrorAction Stop | Select-Object -ExpandProperty Name) | ConvertTo-Json -Compress"
-    result = subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',script],
-       capture_output=True,timeout=30,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
-    if result.returncode:
-        raise RuntimeError('No se pudieron consultar las impresoras de Windows.')
-    value = result.stdout.decode('utf-8-sig').strip()
-    data = json.loads(value) if value else []
-    return [data] if isinstance(data,str) else data or []
+def printers(include_managed=False):
+    try:
+        result=subprocess.run([sys.executable,str(Path(__file__).with_name('windows_printers.py'))],
+            capture_output=True,timeout=8,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+    except subprocess.TimeoutExpired:
+        raise RuntimeError('Windows no respondió al consultar sus impresoras. El agente seguirá conectado. Revisa el servicio Cola de impresión y las conexiones de impresoras en esta PC; luego reintenta Compartir impresoras.') from None
+    try:data=json.loads(result.stdout.decode('utf-8-sig'))
+    except (ValueError,UnicodeError):raise RuntimeError('Windows no devolvió una lista válida de impresoras. Revisa el servicio Cola de impresión.') from None
+    if result.returncode or 'error' in data:
+        raise RuntimeError('No se pudieron consultar las impresoras locales. Revisa el servicio Cola de impresión. '+str(data.get('error',''))[:250])
+    names=data.get('printers')
+    if not isinstance(names,list) or len(names)>2000 or any(not isinstance(n,str) or not n.strip() for n in names):
+        raise RuntimeError('Windows devolvió una lista de impresoras inválida.')
+    result=names if include_managed else [name for name in names if not name.startswith('PRINTER-TAB - ')]
+    if not include_managed and len(result)>200:raise RuntimeError('Windows reportó más de 200 impresoras publicables.')
+    return result
 
 def execute_print(config, job, home):
     work = home / 'work'
@@ -116,6 +127,13 @@ def run(home, interactive=True):
     try:auto_audit_needed=json.loads(audit_schema.read_text(encoding='utf-8')).get('schema',0)<2
     except (OSError,ValueError):auto_audit_needed=True
     next_auto_audit=0
+    printer_monitor=PrinterMonitor(printers)
+    windows_server=None
+    try:
+        from windows_bridge import start
+        windows_server,windows_broker=start(home,config)
+        print('Impresoras Windows: puente activo en 127.0.0.1:'+str(windows_server.server_port)+'. Usa Impresoras en Windows para instalarlas.',flush=True)
+    except Exception as error:print('No se pudo iniciar el puente Windows:',str(error)[:300],flush=True)
     while True:
         try:
             if marker.exists():
@@ -123,8 +141,11 @@ def run(home, interactive=True):
                 api(config,'pc/finish',report)
                 marker.unlink()
             if time.time()-last_heartbeat > 15:
-                names = printers()
-                response=api(config,'pc/heartbeat',{'printers':names})
+                names,warning=printer_monitor.poll()
+                heartbeat={'printer_warning':warning}
+                if names is not None:heartbeat['printers']=names
+                response=api(config,'pc/heartbeat',heartbeat)
+                if warning:print('Aviso de impresoras locales:',warning,flush=True)
                 atomic_json(path,config)
                 requested=response.get('inventory_request')
                 if audit_future is None and (requested or (auto_audit_needed and time.time()>=next_auto_audit)):
@@ -162,3 +183,5 @@ def run(home, interactive=True):
             print('Conexión pendiente:',str(e)[:250],flush=True)
             time.sleep(10)
     audit_pool.shutdown(wait=False,cancel_futures=True)
+    printer_monitor.close()
+    if windows_server is not None:windows_broker.stop.set();windows_server.shutdown();windows_server.server_close()

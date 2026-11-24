@@ -171,6 +171,17 @@ class CentralTest(unittest.TestCase):
         for address in ['http://user:secret@host','https://host/path','https://host?token=bad']:
             with self.assertRaises(ValueError):normalize_url(address)
 
+    def test_local_discovery_failure_keeps_agent_alive_and_remote_assignment(self):
+        self.req('admin/grants',{'tablet':self.pc1['id'],'printers':[self.printer]})
+        with self.s.db() as db:own=db.execute('SELECT id FROM printers WHERE pc=?',(self.pc1['id'],)).fetchone()[0]
+        self.req('pc/heartbeat',{'printer_warning':'Local spooler timeout'},self.pc1['token'])
+        self.assertEqual([self.printer],[p['id'] for p in self.req('client/printers',token=self.pc1['token'])['printers']])
+        state=self.req('admin/state')
+        self.assertEqual('Local spooler timeout',next(r['warning'] for r in state['printer_reports'] if r['device']==self.pc1['id']))
+        with self.s.db() as db:self.assertEqual(1,db.execute('SELECT available FROM printers WHERE id=?',(own,)).fetchone()[0])
+        self.req('pc/heartbeat',{'printers':[]},self.pc1['token'])
+        with self.s.db() as db:self.assertEqual(0,db.execute('SELECT available FROM printers WHERE id=?',(own,)).fetchone()[0])
+
     def test_backup_download_is_admin_only_and_snapshot_is_valid(self):
         from backup_config import read_backup
         data=self.req('admin/backup.zip',binary=True)

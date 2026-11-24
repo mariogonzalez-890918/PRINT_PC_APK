@@ -1,4 +1,4 @@
-# PRINTER-TAB 0.5.0
+# PRINTER-TAB 0.6.0
 
 Aplicaciones gestionadas, desarrolladas y administradas por **Área de TI GMP · [sistemas@grupomipan.com](mailto:sistemas@grupomipan.com)**.
 
@@ -8,8 +8,8 @@ Servidor central de administración, agentes Windows y APK Android. El correo id
 
 Los archivos están en [Releases](https://github.com/mariogonzalez-890918/PRINT_PC_APK/releases):
 
-- **PRINTER-TAB-Instalador-0.5.0.exe**: Windows x64. Incluye Python, las librerías, panel gráfico, icono y motor de impresión. No requiere instalar Python o Docker por separado. Se instala en las PCs cliente y, si se utiliza una PC Windows como servidor, en ella también.
-- **PRINTER-TAB-Android-0.5.0.apk**: Android 8 o posterior para tablets y celulares. Se instala encima de la APK anterior con la misma firma y el paquete `com.jad.print` para conservar la vinculación.
+- **PRINTER-TAB-Instalador-0.6.0.exe**: Windows x64. Incluye Python, las librerías, panel gráfico, icono y motor de impresión. No requiere instalar Python o Docker por separado. Se instala en las PCs cliente y, si se utiliza una PC Windows como servidor, en ella también.
+- **PRINTER-TAB-Android-0.6.0.apk**: Android 8 o posterior para tablets y celulares. Se instala encima de la APK anterior con la misma firma y el paquete `com.jad.print` para conservar la vinculación.
 
 El instalador Windows todavía no tiene certificado de firma de editor. La APK está firmada para instalación directa, fuera de Play Store. La versión es inicial y requiere validar la impresión física en los modelos concretos de impresora.
 
@@ -27,7 +27,7 @@ El código de registro incluye las direcciones de conexión configuradas por el 
 
 ### LAN, ZeroTier y Radmin sin cambiar de cuenta
 
-Actualiza el servidor, los EXE clientes y la APK a 0.5.0. En **Servicio central y registro** pulsa **Detectar LAN y VPN**, revisa las direcciones del propio servidor y pulsa **Guardar direcciones LAN / VPN**. Puedes escribir hasta 12 direcciones, una por línea. Ejemplo:
+Actualiza el servidor, los EXE clientes y la APK a 0.6.0. En **Servicio central y registro** pulsa **Detectar LAN y VPN**, revisa las direcciones del propio servidor y pulsa **Guardar direcciones LAN / VPN**. Puedes escribir hasta 12 direcciones, una por línea. Ejemplo:
 
 ```text
 http://192.168.0.10:8765
@@ -42,6 +42,8 @@ Los clientes ya registrados reciben la lista y la identidad cuando vuelven a con
 Los cambios de dirección mantienen el identificador del documento pendiente y sus opciones. Una respuesta HTTP que retira permisos no se sortea probando otra red. Antes de enviar credenciales a una dirección alternativa se verifica que corresponde al mismo servidor. Las operaciones que consumen códigos o reclaman un trabajo se envían una sola vez después de seleccionar una ruta: si su respuesta se pierde, no se repiten automáticamente como si fueran una impresión nueva.
 
 ## Cambiar de servidor, respaldo y restablecimiento
+
+Antes de restablecer un cliente, retira sus colas virtuales con **Impresoras en Windows → Quitar** si ya no se usarán.
 
 El EXE incluye **Cambiar servidor / restablecer** y **Respaldo / restaurar / limpiar**. Estas operaciones son locales al perfil de Windows y requieren confirmar; instalar una actualización no limpia nada automáticamente.
 
@@ -67,9 +69,37 @@ Si prefieres empezar sin conservar la cuenta anterior, usa **Cambiar servidor / 
 7. En la consola, dentro de cada PC, decide cuáles impresoras quedan habilitadas para compartir. Después, en **Asignar impresoras a PCs y móviles**, marca las que puede utilizar cada equipo y guarda. Los permisos se comprueban en el servidor.
 8. En Android pulsa **Activar impresión de Android** y habilita **PRINTER-TAB** una sola vez. Después utiliza **Imprimir** desde Chrome u otra aplicación compatible: abre **Todas las impresoras** y elige **PC · impresora**. No necesitas abrir la APK para cada trabajo. La APK también permite elegir un archivo o recibir PDF/imagen mediante Compartir. El EXE tiene **Imprimir archivo** para enviar documentos a impresoras de otra PC. Cada equipo ve únicamente sus impresoras autorizadas.
 
-## Imprimir una página desde la tablet o celular Android
+## Consola con secciones contraíbles
 
-1. Actualiza el servidor/PCs y la APK a 0.5.0. Conserva la instalación anterior: no desinstales la APK si quieres mantener la vinculación.
+Cada sección y cada equipo se pueden abrir o contraer desde su encabezado. **Contraer todo** y **Expandir todo** permiten cambiar la vista completa. El navegador conserva qué secciones dejaste abiertas al actualizar; contraer una sección no elimina las selecciones de impresoras.
+
+## Impresoras en el menú Imprimir de Windows
+
+El EXE incluye **Impresoras en Windows**. Permite instalar las impresoras asignadas como colas IPP locales con nombres **PRINTER-TAB - PC origen - impresora**, visibles desde Word, Excel, Chrome y otras aplicaciones que imprimen mediante Windows. Usa el controlador IPP incluido en Windows; no instala controladores de terceros en el cliente. Requiere Windows 10 actualizado con la interfaz `Add-Printer -IppURL` (21H2/22H2) o Windows 11 actualizado. El EXE comprueba esa interfaz antes de modificar colas.
+
+1. Actualiza servidor, PCs de origen y PCs cliente al EXE 0.6.0. Cierra versiones anteriores con **Salir** antes de actualizar.
+2. En la PC de origen usa **Compartir impresoras** para publicar las instaladas físicamente o conectadas a ella. El administrador habilita la impresora, la marca para la PC cliente y pulsa **Guardar asignación**.
+3. En la PC cliente inicia impresión y abre **Impresoras en Windows → Instalar / actualizar impresoras asignadas**. Revisa los nombres y autoriza la solicitud de administrador de Windows. La instalación puede tardar mientras Windows prepara su controlador IPP.
+4. En Word o Chrome abre de nuevo el diálogo **Imprimir**, selecciona la cola PRINTER-TAB y envía el documento. Mantén abierto el agente en el cliente y en la PC de origen. La PC cliente recibe PDF, PWG Raster o JPEG desde Windows y conserva el identificador al reenviar al servidor central por LAN/VPN.
+5. Para retirar las colas de este perfil, usa **Impresoras en Windows → Quitar**. Solo retira colas creadas bajo el nombre y perfil de PRINTER-TAB. Al instalar/actualizar también retira sus colas que ya no están autorizadas; los permisos se siguen comprobando en el servidor al enviar cada trabajo.
+
+El puente escucha únicamente en `127.0.0.1`, en un puerto local persistente entre 20000 y 29999; no abre ese puerto a la LAN/VPN. No se utiliza SMB ni se comparte la contraseña Windows de la PC origen. No publica sus propias colas virtuales como si fueran impresoras físicas, para evitar ciclos.
+
+La cola ofrece A4, Carta, ticket de 80 × 200 mm y ticket de 58 × 200 mm, 300 dpi, color/monocromo y una cara. Para tickets selecciona su tamaño y configura el controlador de la impresora física en la PC origen. Otras longitudes, opciones del fabricante, corte y cajón no se detectan automáticamente. El PWG Raster se convierte en PDF con compresión sin pérdida, una página a la vez, con límites de 100 páginas, 25 megapíxeles por página, 64 MB de entrada y 25 MB de PDF final. La cola local admite 100 trabajos activos y hasta 512 MB de documentos guardados.
+
+Cancelar intenta detener un trabajo que aún no fue entregado a la PC origen. Cuando ya lo tiene el controlador, revisa su cola de Windows; el historial no certifica salida física del papel. El almacenamiento y UUID locales sobreviven a reinicios del EXE. Una PC desactivada o un permiso retirado no puede imprimir por una cola que haya quedado instalada.
+
+Esta integración es una versión de pruebas. Se aprobaron 75 pruebas automatizadas y una prueba nativa en Windows 11 (compilación 26300): instalación de una cola temporal mediante el controlador Microsoft IPP, envío de una página sintética desde Windows y recepción de un PDF válido en un servidor aislado, sin imprimir en equipos reales. La cola temporal se retiró al terminar. Quedan pendientes la prueba física de bixo y la validación nativa en Windows 10. No se afirma certificación Mopria ni AirPrint.
+
+### Consulta de impresoras y conexión del agente
+
+La consulta usa `EnumPrintersW` nivel 4 en un proceso aislado, con límite de ocho segundos, sin ejecutar `Get-Printer` ni consultar cada conexión remota. Se realiza en segundo plano: una falla del servicio **Cola de impresión** deja un aviso, conserva la publicación anterior y no interrumpe el heartbeat ni la consulta de impresoras asignadas. Una consulta exitosa vacía sí retira la disponibilidad de las colas que ya no están instaladas. La consola muestra el aviso de cada PC.
+
+**Compartir impresoras** publica las de la PC actual. **Imprimir archivo** usa las asignadas por el servidor; su botón **Actualizar impresoras** recarga los permisos sin cerrar el diálogo. Para que aparezcan en Word/Chrome debes usar **Impresoras en Windows**.
+
+## Impresión desde Android
+
+1. Actualiza el servidor/PCs y la APK a 0.6.0. Conserva la instalación anterior: no desinstales la APK si quieres mantener la vinculación.
 2. Vincula el móvil con correo y código si aún no lo está. El administrador debe asignarle las impresoras.
 3. En PRINTER-TAB pulsa **Activar impresión de Android**. En los ajustes del sistema activa el servicio **PRINTER-TAB**. Android requiere esta autorización manual una sola vez; la APK no puede habilitarse sola.
 4. En Chrome abre la página y utiliza **menú → Compartir → Imprimir** (en algunas apps aparece directamente **Imprimir**). En el selector pulsa **Todas las impresoras** y elige **PC · impresora**. Selecciona páginas, copias, A4/Carta y color/monocromo y confirma en Android.
@@ -111,7 +141,7 @@ Para tickets o etiquetas configura el rollo/tamaño en el controlador de Windows
 
 Desde **Logo / icono / contraseña** puedes cambiar/restaurar logo e icono de Windows y cambiar contraseña. PNG/JPG/WebP hasta 2 MB; el icono también admite ICO. El icono personalizado se aplica al panel, bandeja y accesos directos existentes; el del instalador/EXE en Explorador y el de Android son los incorporados en la compilación.
 
-Cierra la versión anterior con **Salir** antes de actualizar el EXE. Datos Windows: `%LOCALAPPDATA%\JADPrint`. Se conserva esa ruta para mantener cuentas, colas, permisos y vinculaciones de versiones anteriores. Los códigos antiguos simples siguen siendo compatibles en los clientes que ya conservan una dirección; para nuevas instalaciones genera códigos PT3 con el servidor 0.5.0.
+Cierra la versión anterior con **Salir** antes de actualizar el EXE. Datos Windows: `%LOCALAPPDATA%\JADPrint`. Se conserva esa ruta para mantener cuentas, colas, permisos y vinculaciones de versiones anteriores. Los códigos antiguos simples siguen siendo compatibles en los clientes que ya conservan una dirección; para nuevas instalaciones genera códigos PT3 con el servidor 0.6.0.
 
 ## Alojamiento opcional del servidor
 
@@ -130,4 +160,4 @@ La entrada de inicio es `python pc/central_server.py`. Usa almacenamiento persis
 
 Servidor/agente en `pc/`; Android nativo en `android/`; panel Windows en `tools/Launcher.cs`. `tools/build.ps1` genera ambos instaladores; `-WindowsOnly` omite recompilar Android. Runtime incluido: Python 3.13.9, Pillow 12.0.0 y openpyxl 3.1.5. Compilación Android con JDK 21 y SDK 35; Windows con .NET Framework e Inno Setup 6. Las rutas pueden ajustarse en el script.
 
-Pruebas: `python -m unittest discover -s tests -v` con las dependencias de `requirements-server.txt`. La prueba JVM del mismo código de conexión Android se ejecuta con `tools/test_android_routing.ps1` y verifica cambio de ruta, reintento del mismo documento, identidad estable y rechazo de otro servidor. Usan servidores temporales y no imprimen en equipos reales; la prueba JVM no sustituye validar el spooler y las VPN en un móvil real. Clave Android fuera del repositorio: `%LOCALAPPDATA%\JADPrint\signing`; consérvala para futuras actualizaciones. No se publican claves, contraseñas, inventarios reales ni datos de cuentas.
+Pruebas: `python -m unittest discover -s tests -v` con las dependencias de `requirements-dev.txt`. La prueba JVM del mismo código de conexión Android se ejecuta con `tools/test_android_routing.ps1` y verifica cambio de ruta, reintento del mismo documento, identidad estable y rechazo de otro servidor. Usan servidores temporales y no imprimen en equipos reales; la prueba JVM no sustituye validar el spooler y las VPN en un móvil real. Clave Android fuera del repositorio: `%LOCALAPPDATA%\JADPrint\signing`; consérvala para futuras actualizaciones. No se publican claves, contraseñas, inventarios reales ni datos de cuentas.

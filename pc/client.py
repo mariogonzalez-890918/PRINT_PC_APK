@@ -23,7 +23,7 @@ def send_file(config,home,options=None,path=None,job_id=None):
         elif data.startswith(b'\x89PNG\r\n\x1a\n'):mime='image/png'
         elif data.startswith(b'\xff\xd8\xff'):mime='image/jpeg'
         else:raise ValueError('Selecciona PDF, PNG o JPEG.')
-        options=dict(options,name=source.name)
+        options=dict(options,name=str(options.get('name') or source.name)[:160])
         state={'id':job_id,'options':options,'mime':mime,'server':config['url'],'identity':hashlib.sha256(config['token'].encode()).hexdigest()}
         temp=document.with_suffix('.tmp');temp.write_bytes(data);os.replace(temp,document)
         atomic_json(pending,state)
@@ -35,8 +35,12 @@ def send_file(config,home,options=None,path=None,job_id=None):
         result=json.loads(request(config,'client/jobs/'+state['id'],document.read_bytes(),
             {'Authorization':'Bearer '+config['token'],'Content-Type':state['mime'],'X-Print-Options':encoded},timeout=60))
     except urllib.error.HTTPError as e:
+        status=e.code
         try:message=json.load(e).get('error','No se pudo registrar el trabajo.')
         finally:e.close()
+        if status>=500 or status==429:
+            from agent import ApiFailure
+            raise ApiFailure(status,message) from None
         raise ValueError(message) from None
     pending.unlink();document.unlink(missing_ok=True)
     return result

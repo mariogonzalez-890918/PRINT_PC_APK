@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='printer-tab-upgrade-') as profile:
         subprocess.run([runtime,'-c',setup],check=True,env=env,timeout=30)
         database=Path(profile)/'JADPrint'/'hub'/'hub.sqlite3'
         original=hashlib.sha256(database.read_bytes()).hexdigest()
-        subprocess.run([str(root/'dist'/'PRINTER-TAB-Instalador-0.5.0.exe')]+flags,check=True,timeout=120)
+        subprocess.run([str(root/'dist'/'PRINTER-TAB-Instalador-0.6.0.exe')]+flags,check=True,timeout=120)
         if hashlib.sha256(database.read_bytes()).hexdigest()!=original:
             raise RuntimeError('El instalador modificó los datos de la cuenta.')
         if not (target/'PRINTER-TAB.exe').is_file() or (target/'JADPrint.exe').exists():

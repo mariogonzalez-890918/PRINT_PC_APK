@@ -8,11 +8,14 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 
 def main():
     parser = argparse.ArgumentParser(description='PRINTER-TAB · Consola y agente de impresión')
-    parser.add_argument('mode',nargs='?',choices=['hub','agent','status','configure-hub','configure-agent','admin-login','admin-state','admin-grants','admin-code','publish-printers','client-state','client-send','publish-client','reset-local','export-backup','restore-backup','clear-origin'])
+    parser.add_argument('mode',nargs='?',choices=['hub','agent','status','configure-hub','configure-agent','admin-login','admin-state','admin-grants','admin-code','publish-printers','client-state','client-send','publish-client','reset-local','export-backup','restore-backup','clear-origin','windows-queues'])
     parser.add_argument('--headless',action='store_true')
     args = parser.parse_args()
     mode = args.mode
     home = Path(os.environ.get('LOCALAPPDATA','.')) / 'JADPrint'
+    if mode=='windows-queues':
+        from windows_queues import prepare
+        data=json.loads(sys.stdin.readline());print(json.dumps(prepare(home/'agent',data['action'])));return
     if mode in ('export-backup','restore-backup','clear-origin'):
         from backup_config import export_file,restore_file,clear_origin
         data=json.loads(sys.stdin.readline())

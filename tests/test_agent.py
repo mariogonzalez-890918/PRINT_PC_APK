@@ -24,10 +24,30 @@ class AgentTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             home=Path(temp);(home/'agent.json').write_text(json.dumps({'url':'http://127.0.0.1:9999','email':'test@example.test'}))
             kernel=MagicMock();kernel.GetLastError.return_value=0
-            with patch.object(agent,'api',side_effect=fake_api),patch.object(agent,'printers',return_value=[]),patch.object(agent,'ThreadPoolExecutor',return_value=pool),patch('ctypes.windll.kernel32',kernel):
+            monitor=MagicMock();monitor.poll.return_value=(None,'Consulta local pendiente')
+            with patch.object(agent,'api',side_effect=fake_api),patch.object(agent,'printers',return_value=[]),patch.object(agent,'PrinterMonitor',return_value=monitor),patch.object(agent,'ThreadPoolExecutor',return_value=pool),patch('windows_bridge.start',side_effect=RuntimeError('Bridge disabled in test')),patch('ctypes.windll.kernel32',kernel):
                 with self.assertRaises(EndLoop):agent.run(home,interactive=False)
             self.assertEqual(snapshot,submitted[0]['inventory']);self.assertIsNone(submitted[0]['request'])
             self.assertEqual(2,json.loads((home/'inventory-schema.json').read_text())['schema'])
+
+    def test_discovery_uses_isolated_native_enumeration_and_friendly_timeout(self):
+        with patch.object(agent.subprocess,'run',return_value=types.SimpleNamespace(returncode=0,stdout=json.dumps({'printers':['bixo','Impresora áé']}).encode())) as run:
+            self.assertEqual(['bixo','Impresora áé'],agent.printers())
+            self.assertTrue(run.call_args.args[0][1].endswith('windows_printers.py'));self.assertEqual(8,run.call_args.kwargs['timeout'])
+            self.assertNotIn('powershell.exe',run.call_args.args[0])
+        with patch.object(agent.subprocess,'run',side_effect=subprocess.TimeoutExpired('native-enumeration',8)):
+            with self.assertRaisesRegex(RuntimeError,'Cola de impresión'):agent.printers()
+
+    def test_discovery_empty_is_valid_but_invalid_response_is_not(self):
+        for payload,code in [(b'{"printers":[]}',0),(b'{"error":"spooler unavailable"}',1),(b'not json',0)]:
+            with patch.object(agent.subprocess,'run',return_value=types.SimpleNamespace(returncode=code,stdout=payload)):
+                if payload==b'{"printers":[]}':self.assertEqual([],agent.printers())
+                else:
+                    with self.assertRaises(RuntimeError):agent.printers()
+        names=['Physical Bixo']+['PRINTER-TAB - proxy '+str(i) for i in range(201)]
+        with patch.object(agent.subprocess,'run',return_value=types.SimpleNamespace(returncode=0,stdout=json.dumps({'printers':names}).encode())):
+            self.assertEqual(['Physical Bixo'],agent.printers())
+            self.assertEqual(names,agent.printers(include_managed=True))
 
     def test_print_command_passes_printer_name_as_one_argument_and_cleans_file(self):
         with tempfile.TemporaryDirectory() as tmp:

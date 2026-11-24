@@ -9,12 +9,54 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using System.Text.RegularExpressions;
 
 class Launcher {
     [STAThread] static void Main(string[] args) {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        if(args.Length==2&&args[0]=="--windows-queues"){Environment.ExitCode=WindowsQueueHelper.Run(args[1]);return;}
         Application.Run(new PrintPanel(args.Length>0?args[0]:""));
+    }
+}
+
+static class WindowsQueueHelper {
+    static bool ValidName(string name,string profile){return name!=null&&name.Length<=220&&Regex.IsMatch(name,@"^PRINTER-TAB - [^\r\n]+\["+profile+@"-[0-9a-f]{8}\]$");}
+    public static int Run(string path){
+        try{
+            var file=new FileInfo(path);if(file.Length>1024*1024)throw new Exception("Plan de instalación demasiado grande.");
+            var serializer=new JavaScriptSerializer();var plan=serializer.Deserialize<Dictionary<string,object>>(File.ReadAllText(path,Encoding.UTF8));
+            string profile=Convert.ToString(plan["profile"]);if(!Regex.IsMatch(profile,"^[0-9a-f]{8}$"))throw new Exception("Perfil no válido.");
+            int count=0;
+            foreach(var item in (System.Collections.IEnumerable)plan["add"]){
+                var row=(Dictionary<string,object>)item;string name=Convert.ToString(row["name"]);Uri uri;
+                if(!ValidName(name,profile)||!Uri.TryCreate(Convert.ToString(row["url"]),UriKind.Absolute,out uri)||uri.Scheme!="http"||uri.Host!="127.0.0.1"||uri.Port<20000||uri.Port>=30000||uri.UserInfo.Length>0||uri.Query.Length>0||uri.Fragment.Length>0||!Regex.IsMatch(uri.AbsolutePath,"^/ipp/[0-9a-f]{32}$"))throw new Exception("Cola o dirección de instalación no válida.");
+                count++;
+            }
+            foreach(var item in (System.Collections.IEnumerable)plan["remove"]){if(!ValidName(Convert.ToString(item),profile))throw new Exception("Nombre de cola no válido.");count++;}
+            if(count>400)throw new Exception("Demasiadas colas en el plan.");
+            string script=@"
+[Console]::InputEncoding=[Text.Encoding]::UTF8
+[Console]::OutputEncoding=[Text.Encoding]::UTF8
+$ErrorActionPreference='Stop'
+$plan=[Console]::In.ReadToEnd() | ConvertFrom-Json
+$errorsFound=New-Object System.Collections.Generic.List[string]
+if (@($plan.add | Where-Object { $_ -ne $null }).Count -gt 0 -and !(Get-Command Add-Printer).Parameters.ContainsKey('IppURL')) { throw 'Esta versión de Windows no admite instalación IPP por esta interfaz. Actualiza Windows 10 a 21H2/22H2 o usa Windows 11 actualizado.' }
+foreach ($name in $plan.remove) { try { Remove-Printer -Name ([System.Management.Automation.WildcardPattern]::Escape($name)) -ErrorAction Stop } catch { $errorsFound.Add($name+': '+$_.Exception.Message) } }
+foreach ($queue in $plan.add) { try { Add-Printer -Name $queue.name -IppURL $queue.url -ErrorAction Stop } catch { $errorsFound.Add($queue.name+': '+$_.Exception.Message) } }
+if ($errorsFound.Count -gt 0) { Write-Output ($errorsFound -join [Environment]::NewLine); exit 1 }
+Write-Output 'Colas PRINTER-TAB actualizadas.'
+";
+            var start=new ProcessStartInfo("powershell.exe","-NoProfile -NonInteractive -EncodedCommand "+Convert.ToBase64String(Encoding.Unicode.GetBytes(script))){UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};
+            using(var process=Process.Start(start)){
+                using(var writer=new StreamWriter(process.StandardInput.BaseStream,new UTF8Encoding(false))){writer.Write(serializer.Serialize(plan));}
+                var output=process.StandardOutput.ReadToEndAsync();var error=process.StandardError.ReadToEndAsync();
+                if(!process.WaitForExit(120000)){process.Kill();throw new Exception("Windows tardó demasiado en instalar las colas. Puede haber cambios parciales; revisa Impresoras y vuelve a sincronizar.");}
+                Task.WaitAll(output,error);
+                if(process.ExitCode!=0)throw new Exception((output.Result+"\n"+error.Result).Trim());
+            }
+            return 0;
+        }catch(Exception error){MessageBox.Show(error.Message,"PRINTER-TAB · Impresoras Windows",MessageBoxButtons.OK,MessageBoxIcon.Information);return 1;}
     }
 }
 
@@ -70,7 +112,8 @@ class PrintPanel : Form {
         Button(tools,"Logo / icono / contraseña",()=>OpenConsole("#branding"),240);
         Button(tools,"Minimizar a bandeja",()=>{Hide();tray.Visible=true;},200);
         Button(tools,"Salir",()=>ExitPanel(),100);layout.Controls.Add(tools,0,5);
-        var migration=new FlowLayoutPanel {Dock=DockStyle.Fill};Button(migration,"Cambiar servidor / restablecer",()=>ResetLocal(),280);Button(migration,"Respaldo / restaurar / limpiar",()=>BackupTools(),280);layout.Controls.Add(migration,0,6);
+        layout.RowStyles[6].Height=70;
+        var migration=new FlowLayoutPanel {Dock=DockStyle.Fill,AutoScroll=true,WrapContents=false};Button(migration,"Cambiar servidor / restablecer",()=>ResetLocal(),230);Button(migration,"Respaldo / restaurar / limpiar",()=>BackupTools(),240);Button(migration,"Impresoras en Windows",()=>WindowsQueues(),220);layout.Controls.Add(migration,0,6);
         log.Multiline=true;log.ReadOnly=true;log.ScrollBars=ScrollBars.Vertical;log.Dock=DockStyle.Fill;log.BackColor=Color.White;log.Font=new Font("Consolas",9);layout.Controls.Add(log,0,7);
         var footer=new LinkLabel {Dock=DockStyle.Fill,Text="Aplicaciones gestionadas, desarrolladas y administradas por Área de TI GMP · sistemas@grupomipan.com",Padding=new Padding(0,14,0,0)};
         footer.Links.Clear();int pos=footer.Text.IndexOf("sistemas@");footer.Links.Add(pos,footer.Text.Length-pos,"mailto:sistemas@grupomipan.com");footer.LinkClicked+=(s,e)=>Process.Start(new ProcessStartInfo((string)e.Link.LinkData){UseShellExecute=true});layout.Controls.Add(footer,0,8);
@@ -171,6 +214,34 @@ class PrintPanel : Form {
         }finally{working=false;UpdateState();}
         await LoadStatus();
     }
+    async Task WindowsQueues(){
+        string action;
+        using(var form=new Form {Text="Impresoras de Word, Excel y Chrome",Size=new Size(600,315),StartPosition=FormStartPosition.CenterParent,Font=Font,FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false}){
+            form.Controls.Add(new Label {Left=20,Top=18,Width=545,Height=70,Text="Instala las impresoras autorizadas como colas de Windows usando su controlador IPP. PRINTER-TAB y su agente deben permanecer abiertos para recibir los documentos y enviarlos al servidor."});
+            var mode=new ComboBox {Left=20,Top=105,Width=545,DropDownStyle=ComboBoxStyle.DropDownList};mode.Items.Add("Instalar / actualizar impresoras asignadas");mode.Items.Add("Quitar las impresoras PRINTER-TAB de este perfil");mode.SelectedIndex=0;form.Controls.Add(mode);
+            var ok=new Button {Text="Continuar",Left=330,Top=190,Width=110,Height=40,DialogResult=DialogResult.OK};var cancel=new Button {Text="Cancelar",Left=450,Top=190,Width=110,Height=40,DialogResult=DialogResult.Cancel};form.Controls.Add(ok);form.Controls.Add(cancel);form.CancelButton=cancel;
+            if(form.ShowDialog(this)!=DialogResult.OK)return;action=mode.SelectedIndex==0?"install":"remove";
+        }
+        if(action=="install"){
+            if(!agentConfigured)await EnrollAgent();if(!agentConfigured)return;
+            if(!Running(agent))await StartAgent();
+            await Task.Delay(1800);
+        }
+        var plan=json.Deserialize<Dictionary<string,object>>(await Bridge("windows-queues",new{action=action}));
+        int count=0;var names=new List<string>();
+        foreach(var item in (System.Collections.IEnumerable)plan["add"]){count++;names.Add("Instalar: "+Convert.ToString(((Dictionary<string,object>)item)["name"]));}
+        foreach(var item in (System.Collections.IEnumerable)plan["remove"]){count++;names.Add("Quitar: "+Convert.ToString(item));}
+        if(count==0){MessageBox.Show(this,action=="install"?"Las impresoras asignadas ya están instaladas, o no tienes ninguna asignada. Guarda la asignación en el administrador antes de instalar.":"No se encontraron colas PRINTER-TAB de este perfil.","PRINTER-TAB");return;}
+        string detail=String.Join("\n",names.GetRange(0,Math.Min(names.Count,10)).ToArray());
+        if(MessageBox.Show(this,detail+"\n\nWindows solicitará autorización para modificar estas colas. No se instalarán controladores de terceros. Quitar una cola no cancela documentos ya enviados al controlador de la PC destino. ¿Continuar?","Impresoras en Windows",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)return;
+        working=true;
+        try{
+            var start=new ProcessStartInfo(Application.ExecutablePath,"--windows-queues \""+Convert.ToString(plan["path"])+"\""){UseShellExecute=true,Verb="runas"};
+            using(var child=Process.Start(start)){await Task.Run(()=>child.WaitForExit());if(child.ExitCode!=0)throw new Exception("Windows no completó todos los cambios. Revisa el mensaje del instalador y vuelve a intentar.");}
+            MessageBox.Show(this,"Cambios completados. En Word o Chrome abre Imprimir y selecciona PRINTER-TAB - PC - impresora. Cierra y abre el diálogo de impresión si no se actualiza la lista. Mantén Iniciar impresión activo en esta PC y en la PC de origen.","PRINTER-TAB");
+        }catch(System.ComponentModel.Win32Exception error){if(error.NativeErrorCode==1223)Append("Instalación de impresoras cancelada en Windows.");else throw;}
+        finally{working=false;}
+    }
     Process StartChild(string mode) {
         var p=new Process {StartInfo=Command(mode),EnableRaisingEvents=true};
         p.OutputDataReceived+=(s,e)=>{if(e.Data!=null)Append(e.Data);};p.ErrorDataReceived+=(s,e)=>{if(e.Data!=null)Append(e.Data);};
@@ -255,8 +326,9 @@ class PrintPanel : Form {
         using(var form=new Form {Text="PRINTER-TAB · Imprimir en otra PC",Width=680,Height=580,StartPosition=FormStartPosition.CenterParent,Font=Font,Icon=Icon}){
             var panel=new TableLayoutPanel {Dock=DockStyle.Fill,Padding=new Padding(20),ColumnCount=1,RowCount=7};
             foreach(int h in new[]{35,50,55,45,60})panel.RowStyles.Add(new RowStyle(SizeType.Absolute,h));panel.RowStyles.Add(new RowStyle(SizeType.Percent,100));panel.RowStyles.Add(new RowStyle(SizeType.Absolute,45));form.Controls.Add(panel);
-            panel.Controls.Add(new Label {Text="Solo aparecen impresoras autorizadas para esta PC.",Dock=DockStyle.Fill},0,0);
+            var top=new FlowLayoutPanel {Dock=DockStyle.Fill};top.Controls.Add(new Label {Text="Impresoras asignadas a esta PC",AutoSize=true,Padding=new Padding(0,6,8,0)});panel.Controls.Add(top,0,0);
             var printer=new ComboBox {Dock=DockStyle.Fill,DropDownStyle=ComboBoxStyle.DropDownList};foreach(var p in list)printer.Items.Add(Convert.ToString(p["pc"])+" · "+Convert.ToString(p["name"]));if(list.Count>0)printer.SelectedIndex=0;panel.Controls.Add(printer,0,1);
+            var refresh=new Button {Text="Actualizar impresoras",Width=185,Height=30};top.Controls.Add(refresh);refresh.Click+=async(s,e)=>{refresh.Enabled=false;try{var updated=json.Deserialize<Dictionary<string,object>>(await Bridge("client-state"));string selected=printer.SelectedIndex>=0?Convert.ToString(list[printer.SelectedIndex]["id"]):"";list.Clear();printer.Items.Clear();foreach(var p in Rows(updated,"printers")){list.Add(p);printer.Items.Add(Convert.ToString(p["pc"])+" · "+Convert.ToString(p["name"]));}if(list.Count>0)printer.SelectedIndex=0;for(int i=0;i<list.Count;i++)if(Convert.ToString(list[i]["id"])==selected)printer.SelectedIndex=i;if(list.Count==0)MessageBox.Show(form,"No hay impresoras asignadas a esta PC. En Administración marca la impresora de origen y pulsa Guardar asignación. Compartir impresoras publica las instaladas en esta PC; no descarga las de otros equipos.","PRINTER-TAB");}catch(Exception ex){ShowError(ex.Message);}finally{refresh.Enabled=true;}};
             string file="";var choose=new Button {Text="Seleccionar PDF, PNG o JPG",Dock=DockStyle.Fill};var label=new Label {Dock=DockStyle.Fill,Text=pending?"Hay un envío sin confirmar: se reintentará con el mismo identificador.":"Selecciona un documento."};
             choose.Click+=(s,e)=>{using(var dialog=new OpenFileDialog {Filter="Documentos imprimibles|*.pdf;*.png;*.jpg;*.jpeg"})if(dialog.ShowDialog(form)==DialogResult.OK){file=dialog.FileName;label.Text=Path.GetFileName(file);}};choose.Enabled=!pending;panel.Controls.Add(choose,0,2);panel.Controls.Add(label,0,3);
             var copies=new NumericUpDown {Minimum=1,Maximum=20,Value=1,Width=100};if(pending){printer.Enabled=false;copies.Enabled=false;var old=(Dictionary<string,object>)data["pending_job"];var prior=(Dictionary<string,object>)old["options"];label.Text="Envío pendiente: "+Convert.ToString(prior["name"])+" · se conserva el destino original.";if(prior.ContainsKey("copies"))copies.Value=Convert.ToDecimal(prior["copies"]);for(int i=0;i<list.Count;i++)if(Convert.ToString(list[i]["id"])==Convert.ToString(prior["printer"]))printer.SelectedIndex=i;}var row=new FlowLayoutPanel {Dock=DockStyle.Fill};row.Controls.Add(new Label {Text="Copias:",AutoSize=true,Padding=new Padding(0,8,0,0)});row.Controls.Add(copies);panel.Controls.Add(row,0,4);

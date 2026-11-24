@@ -8,6 +8,39 @@ async function api(path,body){
  const result=await r.json();if(!r.ok)throw Error(result.error||'No se pudo completar la solicitud.');return result;
 }
 function safely(fn){return async()=>{try{await fn();}catch(e){message(e.message);}};}
+function rememberFold(details,key,initial=false){
+ details.dataset.fold=key;let saved=null;try{saved=localStorage.getItem('printerTabFold:'+key);}catch{}
+ details.open=saved===null?initial:saved==='1';details.addEventListener('toggle',()=>{try{localStorage.setItem('printerTabFold:'+key,details.open?'1':'0');}catch{}});return details;
+}
+function deviceFold(title,key,badge){
+ const card=el('details',undefined,'device'),summary=el('summary'),body=el('div',undefined,'fold-body');summary.append(el('span',title));if(badge)summary.append(el('span',badge,'badge'));card.append(summary,body);rememberFold(card,key);return {card,body,summary};
+}
+function wrapSection(id,title,nodes,initial=false){
+ const details=el('details',undefined,'fold'),summary=el('summary',title),body=el('div',undefined,'fold-body');
+ nodes[0].before(details);for(const node of nodes){if(node.id===id)node.removeAttribute('id');if(node.tagName==='H2')node.remove();else{if(node.tagName==='SECTION')node.querySelector(':scope > h2')?.remove();body.append(node);}}
+ details.id=id;details.append(summary,body);rememberFold(details,id,initial);return details;
+}
+function revealAnchor(){
+ if($('dashboard').hidden||!location.hash)return;
+ const target=$(decodeURIComponent(location.hash.slice(1)));if(!target)return;
+ let parent=target;while(parent){if(parent.tagName==='DETAILS')parent.open=true;parent=parent.parentElement;}
+ target.scrollIntoView({block:'start'});
+}
+function organizeSections(){
+ const style=el('style',`.fold,.device{background:white;border:1px solid #dce5ee;border-radius:14px;margin:14px 0;overflow:hidden;padding:0}.fold>summary,.device>summary{padding:18px 22px;cursor:pointer;font-size:20px;font-weight:650;overflow-wrap:anywhere}.fold>summary::marker,.device>summary::marker{color:#1464c0}.fold[open]>summary,.device[open]>summary{border-bottom:1px solid #e7edf4}.fold-body{padding:18px 22px}.fold-body>section{margin:0;padding:0;border:0}.device{margin:0}.device>summary{padding:16px;font-size:16px}.device>summary .badge{display:block;width:fit-content;margin-top:8px}.device>.fold-body{padding:14px 16px}.grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr))}.check{overflow-wrap:anywhere}summary:focus-visible{outline:3px solid #1464c0;outline-offset:-4px}`);document.head.append(style);
+ const accountSection=$('account').closest('section');accountSection.querySelector('p').textContent='Abre solo la sección y el equipo que necesitas administrar.';
+ const toolbar=el('div');for(const [title,open] of [['Contraer todo',false],['Expandir todo',true]]){const button=el('button',title,'secondary');button.onclick=()=>document.querySelectorAll('details[data-fold]').forEach(d=>{d.open=open;});toolbar.append(button);}accountSection.append(toolbar);
+ wrapSection('registration','Registrar equipos',[$('addPC'),$('addTablet'),$('pairing')]);
+ wrapSection('connections','Conexión del servidor · LAN y VPN',[$('serviceUrl').closest('section')]);
+ wrapSection('preparation','Cómo compartir y usar impresoras',[$('printerStatus').closest('section')]);
+ wrapSection('computers','Computadoras',[$('pcs').previousElementSibling,$('pcs')]);
+ const heading=$('permissions'),description=heading.nextElementSibling;wrapSection('permissions','Asignar impresoras a PCs y móviles',[heading,description,$('tablets')],true);
+ wrapSection('jobsSection','Últimos trabajos',[$('jobs').closest('section')]);
+ wrapSection('inventory','Inventario, Excel y respaldo',[$('inventory')]);
+ const branding=$('branding');branding.classList.add('fold');const body=el('div',undefined,'fold-body');for(const node of Array.from(branding.children))if(node.tagName!=='SUMMARY')body.append(node);branding.append(body);rememberFold(branding,'branding');
+ for(const link of document.querySelectorAll('a[href^="#"]'))link.addEventListener('click',()=>setTimeout(revealAnchor,0));
+ window.addEventListener('hashchange',revealAnchor);
+}
 function toggleDevice(d){const b=el('button',d.enabled?'Desactivar':'Reactivar','secondary');b.onclick=safely(async()=>{await api('admin/device',{id:d.id,enabled:!d.enabled});await refresh();});return b;}
 function deleteDevice(d){const b=el('button','Eliminar equipo','secondary');b.style.color='#a21d26';b.onclick=safely(async()=>{
  if(!confirm('¿Eliminar definitivamente '+d.name+'?\n\nSe retirarán su vinculación, inventario, impresoras publicadas y permisos. Los trabajos en espera se cancelarán; el historial de impresión se conservará. Para volver a usarlo necesitarás registrarlo con un código nuevo.'))return;
@@ -22,26 +55,27 @@ async function refresh(){
  $('pcs').replaceChildren();$('tablets').replaceChildren();$('jobs').replaceChildren();
  for(const d of data.devices){
   if(d.role==='pc'){
-   const card=el('div',undefined,'card');card.append(el('h3',d.name));
    const online=d.enabled&&Date.now()/1000-d.seen<45;
-   card.append(el('span',!d.enabled?'Desactivada':online?'Conectada':'Sin conexión','badge'));
+   const panel=deviceFold(d.name,'pc:'+d.id,!d.enabled?'Desactivada':online?'Conectada':'Sin conexión'),card=panel.card,content=panel.body;
+   const report=(data.printer_reports||[]).find(r=>r.device===d.id);if(report?.warning)content.append(el('p','Impresoras de esta PC: '+report.warning,'muted'));
    for(const p of data.printers.filter(p=>p.pc===d.id)){
     const label=el('label',undefined,'check'),cb=el('input');cb.type='checkbox';cb.checked=p.shared!==0;
-    label.append(cb,document.createTextNode('Compartir '+p.name+(p.available?'':' · no disponible')));card.append(label);
+    label.append(cb,document.createTextNode('Compartir '+p.name+(p.available?'':' · no disponible')));content.append(label);
     cb.onchange=async()=>{const requested=cb.checked;cb.disabled=true;try{await api('admin/printer-sharing',{printer:p.id,enabled:requested});p.shared=requested?1:0;message(p.name+(requested?' habilitada para compartir.':' deshabilitada para compartir.'));}catch(error){cb.checked=!requested;message(error.message);}finally{cb.disabled=false;}};
    }
-   card.append(toggleDevice(d));if(!d.enabled)card.append(deleteDevice(d));$('pcs').append(card);
+   content.append(toggleDevice(d));if(!d.enabled)content.append(deleteDevice(d));$('pcs').append(card);
   }
-  const receiver=el('div',undefined,'card');receiver.append(el('h3',(d.role==='pc'?'PC · ':'Móvil · ')+d.name),el('span',d.enabled?'Registrado':'Desactivado','badge'));
+  const assigned=data.grants.filter(g=>g.tablet===d.id).length,panel=deviceFold((d.role==='pc'?'PC · ':'Móvil · ')+d.name,'receiver:'+d.id,(d.enabled?'Registrado':'Desactivado')+' · '+assigned+' asignada(s)'),receiver=panel.body;
   for(const p of data.printers){const label=el('label',undefined,'check'),cb=el('input');cb.type='checkbox';cb.value=p.id;cb.checked=data.grants.some(g=>g.tablet===d.id&&g.printer===p.id);label.append(cb,document.createTextNode((devices.get(p.pc)?.name||'PC')+' · '+p.name+(p.shared===0?' · compartición desactivada':'')));receiver.append(label);}
   if(!data.printers.length)receiver.append(el('p','No hay impresoras publicadas todavía.','muted'));
-  const save=el('button','Guardar asignación');save.onclick=safely(async()=>{await api('admin/grants',{tablet:d.id,printers:[...receiver.querySelectorAll('input:checked')].map(c=>c.value)});message('Asignación guardada para '+d.name+'.');});receiver.append(save);if(d.role!=='pc')receiver.append(toggleDevice(d));if(!d.enabled)receiver.append(deleteDevice(d));$('tablets').append(receiver);
+  const save=el('button','Guardar asignación');save.onclick=safely(async()=>{const selected=[...receiver.querySelectorAll('input:checked')].map(c=>c.value);await api('admin/grants',{tablet:d.id,printers:selected});panel.summary.querySelector('.badge').textContent=(d.enabled?'Registrado':'Desactivado')+' · '+selected.length+' asignada(s)';message('Asignación guardada para '+d.name+'.');});receiver.append(save);if(d.role!=='pc')receiver.append(toggleDevice(d));if(!d.enabled)receiver.append(deleteDevice(d));$('tablets').append(panel.card);
  }
  if(!$('pcs').children.length)$('pcs').append(el('p','Genera un código de PC y únela con su correo.','muted'));
  if(!$('tablets').children.length)$('tablets').append(el('p','Todavía no hay equipos registrados.','muted'));
  const names={queued:'En espera',claimed:'Entregado a PC · sin confirmar',submitted:'Enviado a Windows',error:'Error',unknown:'Resultado incierto · revisar'};
  for(const j of data.jobs){const row=el('tr');row.append(el('td',j.name),el('td',(devices.get(j.tablet)?.name||'Equipo')+' / '+(devices.get(j.pc)?.name||'PC')));const status=el('td');status.append(el('strong',names[j.status]||j.status),el('div',j.message,'muted'));row.append(status,el('td',new Date(j.created*1000).toLocaleString('es-MX')));$('jobs').append(row);}
  await refreshInventory();
+ if(!refresh.anchorShown){revealAnchor();refresh.anchorShown=true;}
 }
 async function refreshInventory(){
  const data=await api('admin/inventory');$('inventoryRows').replaceChildren();
@@ -87,8 +121,7 @@ $('saveIcon').onclick=safely(async()=>{
 });
 $('resetIcon').onclick=safely(async()=>{await api('admin/icon/reset',{});message('Icono original restaurado. Vuelve al panel de Windows para aplicarlo.');});
 
-if(location.hash==='#branding')$('branding').open=true;
-window.addEventListener('hashchange',()=>{if(location.hash==='#branding')$('branding').open=true;});
+organizeSections();
 
 $('refreshInventory').onclick=safely(refreshInventory);
 $('exportInventory').onclick=safely(async()=>{
